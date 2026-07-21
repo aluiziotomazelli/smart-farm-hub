@@ -19,3 +19,7 @@
     url = https://github.com/aluiziotomazelli/idf_hals.git
     branch = main
 
+[submodule "components/display_gfx"]
+	path = components/display_gfx
+	url = https://github.com/aluiziotomazelli/display_gfx.git
+	branch = main
