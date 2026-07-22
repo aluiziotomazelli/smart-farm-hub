@@ -191,7 +191,7 @@ static esp_err_t setup_hardware()
         display_config.width = 128;
         display_config.height = 64;
         display_config.rst_gpio = -1;
-        display_config.i2c_clk_speed_hz = 100000; // Lower frequency for cheap displays/jumper wires
+        display_config.i2c_clk_speed_hz = 400000; // Reverted back to 400kHz as requested
 
         display_hal = new HalDisplaySsd1306(display_config);
         display_hal->init();

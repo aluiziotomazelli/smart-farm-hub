@@ -28,7 +28,7 @@ void UIController::render_main_screen(const SystemState& state) {
     uint32_t ss = elapsed_s % 60;
 
     float level_percent = state.water_level_permille / 10.0f;
-    snprintf(buf, sizeof(buf), "L:%4.1f%% %02lu:%02lu %4.1fcm", level_percent, mm, ss, state.water_distance_cm);
+    snprintf(buf, sizeof(buf), "  %.1f  %lu:%02lu   %.1f", level_percent, mm, ss, state.water_distance_cm);
     gfx_.draw_string(0, 12, buf, 1);
 
     // --- Row 2: Visual bar ---
@@ -41,15 +41,15 @@ void UIController::render_main_screen(const SystemState& state) {
     }
 
     // --- Row 3: WiFi Status ---
-    snprintf(buf, sizeof(buf), "WiFi:%s RSSI:%3d", state.wifi_connected ? "ON " : "OFF", state.wifi_rssi);
+    snprintf(buf, sizeof(buf), "WiFi: %-3s    R: %d", state.wifi_connected ? "ON" : "OFF", state.wifi_rssi);
     gfx_.draw_string(0, 34, buf, 1);
 
     // --- Row 4: ESP-NOW Status ---
-    snprintf(buf, sizeof(buf), "ENOW Pr:%d RSSI:%3d", state.espnow_peers, state.espnow_avg_rssi);
+    snprintf(buf, sizeof(buf), "E-NOW  Pr: %d  R: %d", state.espnow_peers, state.espnow_avg_rssi);
     gfx_.draw_string(0, 44, buf, 1);
 
     // --- Row 5: Stats ---
-    snprintf(buf, sizeof(buf), "S:%-3lu L:%-3lu RTT:%-3lu", state.messages_sent, state.messages_lost, state.last_rtt_ms);
+    snprintf(buf, sizeof(buf), "S: %-4lu  L: %-2lu  T:%-2lu", state.messages_sent, state.messages_lost, state.last_rtt_ms);
     gfx_.draw_string(0, 54, buf, 1);
 }
 
