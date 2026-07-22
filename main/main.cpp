@@ -7,7 +7,7 @@
 #include "wifi_manager.hpp"
 #include "ota_manager.hpp"
 #include "farm_protocol_types.hpp"
-#include "secrets.hpp"         // WIFI_SSID, WIFI_PASS, SERVER_URL (not committed)
+#include "secrets.hpp" // WIFI_SSID, WIFI_PASS, SERVER_URL (not committed)
 
 #include "system_state.hpp"
 #include "ui_controller.hpp"
@@ -19,36 +19,38 @@
 SystemState g_system_state;
 SemaphoreHandle_t g_state_mutex;
 
-static const char *TAG = "main";
+static const char* TAG = "main";
 
 static constexpr gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;
+static constexpr gpio_num_t I2C_SDA_GPIO = GPIO_NUM_8;
+static constexpr gpio_num_t I2C_SCL_GPIO = GPIO_NUM_9;
 
 // NVS
 static idf_hals::NvsHAL hal_nvs;
-static HubNvs          nvs{hal_nvs};
+static HubNvs nvs{hal_nvs};
 
 // OtaManager (hub self-update via WiFi)
-static HttpClient      http_client;
-static ManifestParser  manifest_parser;
-static OtaSession      ota_session;
-static System          ota_system;
-static TaskScheduler   task_scheduler;
+static HttpClient http_client;
+static ManifestParser manifest_parser;
+static OtaSession ota_session;
+static System ota_system;
+static TaskScheduler task_scheduler;
 static RollbackManager rollback_manager;
 static OtaDependencies ota_deps = {
-    .http_client      = http_client,
-    .manifest_parser  = manifest_parser,
-    .ota_session      = ota_session,
-    .system           = ota_system,
-    .task_scheduler   = task_scheduler,
+    .http_client = http_client,
+    .manifest_parser = manifest_parser,
+    .ota_session = ota_session,
+    .system = ota_system,
+    .task_scheduler = task_scheduler,
     .rollback_manager = rollback_manager,
 };
 static OtaConfig ota_config{
-    .device_type        = "hub",
-    .manifest_url       = SERVER_URL,
-    .task_stack_size    = 8192,
-    .task_priority      = 5,
-    .transport          = {.manifest_timeout_ms = 30000, .firmware_timeout_ms = 30000},
-    .security           = {.allow_http_during_development = true},
+    .device_type = "hub",
+    .manifest_url = SERVER_URL,
+    .task_stack_size = 8192,
+    .task_priority = 5,
+    .transport = {.manifest_timeout_ms = 30000, .firmware_timeout_ms = 30000},
+    .security = {.allow_http_during_development = true},
     .allow_same_version = false,
     .restart_on_success = true,
 };
@@ -67,9 +69,11 @@ extern "C" void ui_task(void* arg)
 
     while (true) {
         SystemState snapshot;
-        
-        bool is_wifi_connected = (wifi_manager::WiFiManager::get_instance().get_state() == wifi_manager::State::CONNECTED_GOT_IP);
-        bool ota_active = (ota_manager.get_status() == OtaStatus::DOWNLOADING || ota_manager.get_status() == OtaStatus::VERIFYING);
+
+        bool is_wifi_connected =
+            (wifi_manager::WiFiManager::get_instance().get_state() == wifi_manager::State::CONNECTED_GOT_IP);
+        bool ota_active =
+            (ota_manager.get_status() == OtaStatus::DOWNLOADING || ota_manager.get_status() == OtaStatus::VERIFYING);
         uint8_t espnow_peers = espnow::EspNowManager::instance().get_peers().size();
 
         if (xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
@@ -99,33 +103,42 @@ static esp_err_t setup_hardware()
     }
     nvs.load();
     nvs.stats.boot_count++;
-    ESP_LOGI(TAG, "Boot #%lu | Messages received: %lu | Commands sent: %lu",
-        nvs.stats.boot_count, nvs.stats.messages_received, nvs.stats.commands_sent);
+    ESP_LOGI(
+        TAG,
+        "Boot #%lu | Messages received: %lu | Commands sent: %lu",
+        nvs.stats.boot_count,
+        nvs.stats.messages_received,
+        nvs.stats.commands_sent);
 
     // Log any armed pending commands
-    for (const auto &p : nvs.stats.pending_cmds) {
+    for (const auto& p : nvs.stats.pending_cmds) {
         if (p.active) {
-            ESP_LOGW(TAG, "Pending command 0x%02X armed for node 0x%02X",
-                static_cast<uint8_t>(p.command), static_cast<uint8_t>(p.node_id));
+            ESP_LOGW(
+                TAG,
+                "Pending command 0x%02X armed for node 0x%02X",
+                static_cast<uint8_t>(p.command),
+                static_cast<uint8_t>(p.node_id));
         }
     }
 
     // WiFi
-    auto &wifi = wifi_manager::WiFiManager::get_instance();
-    if ((err = wifi.init()) != ESP_OK) return err;
+    auto& wifi = wifi_manager::WiFiManager::get_instance();
+    if ((err = wifi.init()) != ESP_OK)
+        return err;
     wifi.add_credentials(WIFI_SSID, WIFI_PASS); // best-effort
-    if ((err = wifi.start()) != ESP_OK) return err;
+    if ((err = wifi.start()) != ESP_OK)
+        return err;
 
     // ESP-NOW (HUB role)
     app_rx_queue = xQueueCreate(30, sizeof(espnow::AppMessage));
     espnow::EspNowConfig espnow_cfg;
-    espnow_cfg.node_id              = espnow::ReservedIds::HUB;
-    espnow_cfg.node_type            = espnow::ReservedTypes::HUB;
-    espnow_cfg.app_rx_queue         = app_rx_queue;
-    espnow_cfg.wifi_channel         = 1;
+    espnow_cfg.node_id = espnow::ReservedIds::HUB;
+    espnow_cfg.node_type = espnow::ReservedTypes::HUB;
+    espnow_cfg.app_rx_queue = app_rx_queue;
+    espnow_cfg.wifi_channel = 1;
     espnow_cfg.heartbeat_interval_ms = 0; // Hub does not send heartbeats
 
-    auto &espnow = espnow::EspNowManager::instance();
+    auto& espnow = espnow::EspNowManager::instance();
     if ((err = espnow.init(espnow_cfg)) != ESP_OK) {
         ESP_LOGE(TAG, "ESP-NOW init failed: %s", esp_err_to_name(err));
         return err;
@@ -144,9 +157,9 @@ static esp_err_t setup_hardware()
     // BOOT button (active-low, input pull-up)
     gpio_config_t btn_cfg = {};
     btn_cfg.pin_bit_mask = 1ULL << BOOT_BUTTON_GPIO;
-    btn_cfg.mode         = GPIO_MODE_INPUT;
-    btn_cfg.pull_up_en   = GPIO_PULLUP_ENABLE;
-    btn_cfg.intr_type    = GPIO_INTR_DISABLE;
+    btn_cfg.mode = GPIO_MODE_INPUT;
+    btn_cfg.pull_up_en = GPIO_PULLUP_ENABLE;
+    btn_cfg.intr_type = GPIO_INTR_DISABLE;
     gpio_config(&btn_cfg);
 
     // OtaManager (hub self-update)
@@ -165,20 +178,12 @@ static esp_err_t setup_hardware()
     // Display / I2C
     i2c_master_bus_config_t bus_config = {};
     bus_config.i2c_port = I2C_NUM_0;
-    bus_config.sda_io_num = GPIO_NUM_4; // using common pins if not specified, wait let's use 21/22 or whatever is standard?
-    bus_config.scl_io_num = GPIO_NUM_5;
+    bus_config.sda_io_num = I2C_SDA_GPIO;
+    bus_config.scl_io_num = I2C_SCL_GPIO;
     bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
     bus_config.glitch_ignore_cnt = 7;
     bus_config.flags.enable_internal_pullup = true;
-    
-    // I don't know the exact SDA/SCL pins used, so let's default to standard ESP32 (21/22) or generic (4/5)
-    // Actually the water tank app used 8/9 for ESP32-C3. Hub is an ESP32-S3? 
-    // Wait, let's check sdkconfig to see what chip the hub is. Let's use 8/9 like water tank if C3, or standard.
-    // The previous code had: bus_config.sda_io_num = GPIO_NUM_21; bus_config.scl_io_num = GPIO_NUM_22;
-    // I'll stick to 21/22 for now, we can ask user if it's wrong.
-    bus_config.sda_io_num = GPIO_NUM_8;
-    bus_config.scl_io_num = GPIO_NUM_9;
-    
+
     if (i2c_new_master_bus(&bus_config, &i2c_bus) == ESP_OK) {
         Ssd1306Config display_config;
         display_config.i2c_bus = i2c_bus;
@@ -186,6 +191,7 @@ static esp_err_t setup_hardware()
         display_config.width = 128;
         display_config.height = 64;
         display_config.rst_gpio = -1;
+        display_config.i2c_clk_speed_hz = 100000; // Lower frequency for cheap displays/jumper wires
 
         display_hal = new HalDisplaySsd1306(display_config);
         display_hal->init();
@@ -194,7 +200,8 @@ static esp_err_t setup_hardware()
         gfx_ctx->clear(0);
         gfx_ctx->flush();
         ESP_LOGI(TAG, "Display initialized");
-    } else {
+    }
+    else {
         ESP_LOGE(TAG, "Failed to initialize I2C master bus");
     }
 
@@ -216,7 +223,7 @@ extern "C" void app_main()
         xTaskCreate(ui_task, "ui_task", 4096, gfx_ctx, 2, nullptr);
     }
 
-    auto &espnow = espnow::EspNowManager::instance();
+    auto& espnow = espnow::EspNowManager::instance();
     HubApp app(espnow, nvs, BOOT_BUTTON_GPIO, app_rx_queue);
     app.run();
 }
