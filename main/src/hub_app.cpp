@@ -2,6 +2,8 @@
 #include "hub_app.hpp"
 #include "farm_protocol_types.hpp" // WaterLevelReport, FarmPayloadType, FarmNodeId
 #include "espnow_types.hpp"        // AppMessage, CommandType
+#include "system_state.hpp"
+#include "esp_timer.h"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
@@ -46,6 +48,24 @@ void HubApp::handle_message(const espnow::AppMessage& msg)
         nvs_.stats.last_wt_level_permille = report->level_permille;
         nvs_.stats.last_wt_distance_cm = report->distance_cm;
         nvs_.stats.last_wt_battery_mv = report->battery_mv;
+
+        if (xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
+            g_system_state.water_level_permille = report->level_permille;
+            g_system_state.water_distance_cm = report->distance_cm;
+            g_system_state.last_water_update_ts = esp_timer_get_time();
+            
+            // Assuming this is the only node right now, or we just track overall peers
+            g_system_state.espnow_last_rssi = msg.rssi;
+            
+            // Simple moving average for RSSI (or just set it for now)
+            if (g_system_state.espnow_avg_rssi == 0) {
+                g_system_state.espnow_avg_rssi = msg.rssi;
+            } else {
+                g_system_state.espnow_avg_rssi = (g_system_state.espnow_avg_rssi * 3 + msg.rssi) / 4;
+            }
+            
+            xSemaphoreGive(g_state_mutex);
+        }
 
         ESP_LOGI(
             TAG,
@@ -113,10 +133,20 @@ void HubApp::dispatch_pending_command(farm::NodeId node_id)
     if (err == ESP_OK) {
         clear_pending_command(node_id);
         nvs_.stats.commands_sent++;
+        
+        if (xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
+            g_system_state.messages_sent++;
+            xSemaphoreGive(g_state_mutex);
+        }
+
         ESP_LOGW(
             TAG, "Command 0x%02X dispatched to node 0x%02X", static_cast<uint8_t>(cmd), static_cast<uint8_t>(node_id));
     }
     else {
+        if (xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
+            g_system_state.messages_lost++;
+            xSemaphoreGive(g_state_mutex);
+        }
         ESP_LOGE(
             TAG, "Failed to dispatch command to node 0x%02X: %s", static_cast<uint8_t>(node_id), esp_err_to_name(err));
     }

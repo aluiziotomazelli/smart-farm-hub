@@ -9,6 +9,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/components/espnow_manager"
     "${CMAKE_CURRENT_LIST_DIR}/components/wifi_manager"
     "${CMAKE_CURRENT_LIST_DIR}/components/ota_manager"
+    "${CMAKE_CURRENT_LIST_DIR}/components/display_gfx"
 )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)

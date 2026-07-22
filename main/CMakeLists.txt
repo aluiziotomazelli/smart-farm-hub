@@ -4,6 +4,7 @@ idf_component_register(
         "main.cpp"
         "src/hub_app.cpp"
         "src/hub_nvs.cpp"
+        "src/ui_controller.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES
@@ -13,4 +14,5 @@ idf_component_register(
         wifi_manager
         ota_manager
         idf_hals
+        display_gfx
 )

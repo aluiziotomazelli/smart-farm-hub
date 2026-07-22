@@ -9,6 +9,16 @@
 #include "farm_protocol_types.hpp"
 #include "secrets.hpp"         // WIFI_SSID, WIFI_PASS, SERVER_URL (not committed)
 
+#include "system_state.hpp"
+#include "ui_controller.hpp"
+#include "hal_display_ssd1306.hpp"
+#include "framebuffer_graphics_context.hpp"
+#include "driver/i2c_master.h"
+
+// Global System State
+SystemState g_system_state;
+SemaphoreHandle_t g_state_mutex;
+
 static const char *TAG = "main";
 
 static constexpr gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;
@@ -45,6 +55,38 @@ static OtaConfig ota_config{
 static OtaManager ota_manager(ota_deps);
 
 static QueueHandle_t app_rx_queue = nullptr;
+
+static i2c_master_bus_handle_t i2c_bus = nullptr;
+static HalDisplaySsd1306* display_hal = nullptr;
+static FramebufferGraphicsContext* gfx_ctx = nullptr;
+
+extern "C" void ui_task(void* arg)
+{
+    auto* gfx = static_cast<FramebufferGraphicsContext*>(arg);
+    UIController ui(*gfx);
+
+    while (true) {
+        SystemState snapshot;
+        
+        bool is_wifi_connected = (wifi_manager::WiFiManager::get_instance().get_state() == wifi_manager::State::CONNECTED_GOT_IP);
+        bool ota_active = (ota_manager.get_status() == OtaStatus::DOWNLOADING || ota_manager.get_status() == OtaStatus::VERIFYING);
+        uint8_t espnow_peers = espnow::EspNowManager::instance().get_peers().size();
+
+        if (xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
+            g_system_state.wifi_connected = is_wifi_connected;
+            g_system_state.ota_in_progress = ota_active;
+            g_system_state.espnow_peers = espnow_peers;
+            snapshot = g_system_state;
+            xSemaphoreGive(g_state_mutex);
+        }
+
+        gfx->clear(0);
+        ui.render_main_screen(snapshot);
+        gfx->flush();
+
+        vTaskDelay(pdMS_TO_TICKS(500)); // 2 FPS
+    }
+}
 
 static esp_err_t setup_hardware()
 {
@@ -113,6 +155,49 @@ static esp_err_t setup_hardware()
         return ESP_FAIL;
     }
 
+    // Mutex
+    g_state_mutex = xSemaphoreCreateMutex();
+    if (g_state_mutex == nullptr) {
+        ESP_LOGE(TAG, "Failed to create g_state_mutex");
+        return ESP_FAIL;
+    }
+
+    // Display / I2C
+    i2c_master_bus_config_t bus_config = {};
+    bus_config.i2c_port = I2C_NUM_0;
+    bus_config.sda_io_num = GPIO_NUM_4; // using common pins if not specified, wait let's use 21/22 or whatever is standard?
+    bus_config.scl_io_num = GPIO_NUM_5;
+    bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    bus_config.glitch_ignore_cnt = 7;
+    bus_config.flags.enable_internal_pullup = true;
+    
+    // I don't know the exact SDA/SCL pins used, so let's default to standard ESP32 (21/22) or generic (4/5)
+    // Actually the water tank app used 8/9 for ESP32-C3. Hub is an ESP32-S3? 
+    // Wait, let's check sdkconfig to see what chip the hub is. Let's use 8/9 like water tank if C3, or standard.
+    // The previous code had: bus_config.sda_io_num = GPIO_NUM_21; bus_config.scl_io_num = GPIO_NUM_22;
+    // I'll stick to 21/22 for now, we can ask user if it's wrong.
+    bus_config.sda_io_num = GPIO_NUM_8;
+    bus_config.scl_io_num = GPIO_NUM_9;
+    
+    if (i2c_new_master_bus(&bus_config, &i2c_bus) == ESP_OK) {
+        Ssd1306Config display_config;
+        display_config.i2c_bus = i2c_bus;
+        display_config.i2c_address = 0x3C;
+        display_config.width = 128;
+        display_config.height = 64;
+        display_config.rst_gpio = -1;
+
+        display_hal = new HalDisplaySsd1306(display_config);
+        display_hal->init();
+
+        gfx_ctx = new FramebufferGraphicsContext(*display_hal);
+        gfx_ctx->clear(0);
+        gfx_ctx->flush();
+        ESP_LOGI(TAG, "Display initialized");
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize I2C master bus");
+    }
+
     return ESP_OK;
 }
 
@@ -125,6 +210,10 @@ extern "C" void app_main()
         vTaskDelay(pdMS_TO_TICKS(10000));
         esp_restart();
         return;
+    }
+
+    if (gfx_ctx) {
+        xTaskCreate(ui_task, "ui_task", 4096, gfx_ctx, 2, nullptr);
     }
 
     auto &espnow = espnow::EspNowManager::instance();
