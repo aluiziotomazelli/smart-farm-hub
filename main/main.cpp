@@ -52,7 +52,7 @@ static OtaConfig ota_config{
     .transport = {.manifest_timeout_ms = 30000, .firmware_timeout_ms = 30000},
     .security = {.allow_http_during_development = true},
     .allow_same_version = false,
-    .restart_on_success = true,
+    .restart_on_success = false,
 };
 static OtaManager ota_manager(ota_deps);
 
@@ -89,6 +89,24 @@ extern "C" void ui_task(void* arg)
         gfx->flush();
 
         vTaskDelay(pdMS_TO_TICKS(500)); // 2 FPS
+    }
+}
+
+extern "C" void ota_monitor_task(void* arg)
+{
+    ESP_LOGI(TAG, "OTA Monitor task started");
+    while (true) {
+        if (ota_manager.get_status() == OtaStatus::READY_TO_RESTART) {
+            ESP_LOGW(TAG, "OTA completed successfully. Disconnecting WiFi and rebooting...");
+            auto& wifi = wifi_manager::WiFiManager::get_instance();
+            if (wifi.get_state() != wifi_manager::State::UNINITIALIZED &&
+                wifi.get_state() != wifi_manager::State::INITIALIZED) {
+                wifi.disconnect(2000);
+                wifi.stop(2000);
+            }
+            esp_restart();
+        }
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -223,6 +241,9 @@ extern "C" void app_main()
     if (gfx_ctx) {
         xTaskCreate(ui_task, "ui_task", 4096, gfx_ctx, 2, nullptr);
     }
+
+    // Start OTA Monitor task
+    xTaskCreate(ota_monitor_task, "ota_monitor", 3072, nullptr, 1, nullptr);
 
     auto& espnow = espnow::EspNowManager::instance();
     HubApp app(espnow, nvs, BOOT_BUTTON_GPIO, app_rx_queue);
