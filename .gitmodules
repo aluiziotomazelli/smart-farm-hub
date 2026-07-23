@@ -1,19 +1,19 @@
 [submodule "components/smart-farm-common"]
-    path = components/smart-farm-common
-    url = https://github.com/aluiziotomazelli/smart-farm-common.git
-    branch = main
+	path = components/smart-farm-common
+	url = https://github.com/aluiziotomazelli/smart-farm-common.git
+	branch = main
 [submodule "components/espnow_manager"]
-    path = components/espnow_manager
-    url = https://github.com/aluiziotomazelli/espnow_manager.git
-    branch = main
+	path = components/espnow_manager
+	url = https://github.com/aluiziotomazelli/espnow_manager.git
+	branch = main
 [submodule "components/wifi_manager"]
-    path = components/wifi_manager
-    url = https://github.com/aluiziotomazelli/wifi_manager.git
-    branch = main
+	path = components/wifi_manager
+	url = https://github.com/aluiziotomazelli/wifi_manager.git
+	branch = main
 [submodule "components/ota_manager"]
-    path = components/ota_manager
-    url = https://github.com/aluiziotomazelli/ota_manager.git
-    branch = main
+	path = components/ota_manager
+	url = https://github.com/aluiziotomazelli/ota_manager.git
+	branch = main
 [submodule "components/idf_hals"]
     path = components/idf_hals
     url = https://github.com/aluiziotomazelli/idf_hals.git
