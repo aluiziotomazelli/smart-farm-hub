@@ -85,7 +85,7 @@ extern "C" void ui_task(void* arg)
         }
 
         gfx->clear(0);
-        ui.render_main_screen(snapshot);
+        ui.render_water_tank_screen(snapshot);
         gfx->flush();
 
         vTaskDelay(pdMS_TO_TICKS(500)); // 2 FPS

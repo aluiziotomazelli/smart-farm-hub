@@ -4,11 +4,16 @@
 #include "freertos/semphr.h"
 #include <cstdint>
 
+#include "farm_protocol_types.hpp"
+
 struct SystemState {
     // Water Tank
     uint16_t water_level_permille = 0;
     float water_distance_cm = 0.0f;
     uint32_t last_water_update_ts = 0; // esp_timer_get_time() when received
+    uint16_t water_battery_mv = 0;
+    farm::SensorStatus water_sensor_status = farm::SensorStatus::UNKNOWN;
+    uint8_t water_fill_state = 0;
 
     // WiFi & ESP-NOW
     bool wifi_connected = false;

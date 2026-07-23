@@ -53,6 +53,14 @@ void HubApp::handle_message(const espnow::AppMessage& msg)
             g_system_state.water_level_permille = report->level_permille;
             g_system_state.water_distance_cm = report->distance_cm;
             g_system_state.last_water_update_ts = esp_timer_get_time();
+            g_system_state.water_battery_mv = report->battery_mv;
+
+            uint8_t raw_status = static_cast<uint8_t>(report->status);
+            g_system_state.water_fill_state = (raw_status >> 4) & 0x0F;
+            uint8_t status_lower = raw_status & 0x0F;
+            g_system_state.water_sensor_status = static_cast<farm::SensorStatus>(
+                (status_lower == 0x0F) ? 0xFF : status_lower
+            );
             
             // Assuming this is the only node right now, or we just track overall peers
             g_system_state.espnow_last_rssi = msg.rssi;
