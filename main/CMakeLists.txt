@@ -15,4 +15,5 @@ idf_component_register(
         ota_manager
         idf_hals
         display_gfx
+        time_manager
 )

@@ -23,3 +23,7 @@
 	path = components/display_gfx
 	url = https://github.com/aluiziotomazelli/display_gfx.git
 	branch = main
+[submodule "components/time_manager"]
+	path = components/time_manager
+	url = https://github.com/aluiziotomazelli/time_manager.git
+	branch = main
