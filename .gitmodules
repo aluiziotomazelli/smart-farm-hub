@@ -27,3 +27,7 @@
 	path = components/time_manager
 	url = https://github.com/aluiziotomazelli/time_manager.git
 	branch = main
+[submodule "components/ui_inputs"]
+	path = components/ui_inputs
+	url = https://github.com/aluiziotomazelli/ui_inputs.git
+	branch = main
