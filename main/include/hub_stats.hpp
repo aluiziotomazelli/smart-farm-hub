@@ -1,6 +1,7 @@
 // main/include/hub_stats.hpp
 #pragma once
 #include <cstdint>
+#include <cstddef>
 #include "farm_protocol_types.hpp"
 #include "protocol_types.hpp"   // espnow::CommandType
 
@@ -14,11 +15,23 @@ struct PendingNodeCommand {
     bool                  active      = false;
     farm::NodeId          node_id     = farm::NodeId::UNKNOWN;
     espnow::CommandType   command     = espnow::CommandType::START_OTA;
+
+    bool operator==(const PendingNodeCommand& other) const {
+        return active == other.active && node_id == other.node_id && command == other.command;
+    }
+    bool operator!=(const PendingNodeCommand& other) const {
+        return !(*this == other);
+    }
 };
 
 struct HubStats {
-    // Lifecycle
-    uint32_t boot_count         = 0;
+    static constexpr uint32_t MAGIC = 0x485542; // "HUB"
+    static constexpr uint8_t VERSION = 1;
+
+    uint32_t magic = MAGIC;
+    uint8_t version = VERSION;
+
+    // Lifecycle counters
     uint32_t messages_received  = 0;
     uint32_t commands_sent      = 0;
 
@@ -30,5 +43,35 @@ struct HubStats {
     float    last_wt_distance_cm    = 0.0f;
     uint16_t last_wt_battery_mv     = 0;
 
-    void reset() { *this = HubStats(); }
+    // CRC MUST BE LAST of the validated fields
+    uint32_t crc = 0;
+
+    void reset() {
+        *this = HubStats{};
+        magic = MAGIC;
+        version = VERSION;
+    }
+
+    bool operator==(const HubStats& other) const {
+        if (magic != other.magic || version != other.version ||
+            messages_received != other.messages_received ||
+            commands_sent != other.commands_sent ||
+            last_wt_level_permille != other.last_wt_level_permille ||
+            last_wt_distance_cm != other.last_wt_distance_cm ||
+            last_wt_battery_mv != other.last_wt_battery_mv) {
+            return false;
+        }
+
+        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+            if (pending_cmds[i] != other.pending_cmds[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    bool operator!=(const HubStats& other) const {
+        return !(*this == other);
+    }
 };

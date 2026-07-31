@@ -2,22 +2,18 @@
 #include "esp_log.h"
 #include "espnow_manager.hpp"
 #include "hub_app.hpp"
+#include "nvs_core.hpp"
 #include "hub_nvs.hpp"
+
+#include "hal_system.hpp"
 #include "hal_nvs.hpp"
+#include "hal_freertos.hpp"
+#include "hal_sleep.hpp"
+
+#include "persistence_backend.hpp"
+#include "esp_attr.h"
 #include "wifi_manager.hpp"
 #include "ota_manager.hpp"
-#include "farm_protocol_types.hpp"
-#include "secrets.hpp" // WIFI_SSID, WIFI_PASS, SERVER_URL (not committed)
-
-#include "system_state.hpp"
-#include "ui_controller.hpp"
-#include "hal_display_ssd1306.hpp"
-#include "framebuffer_graphics_context.hpp"
-#include "driver/i2c_master.h"
-
-// Global System State
-SystemState g_system_state;
-SemaphoreHandle_t g_state_mutex;
 
 static const char* TAG = "main";
 
@@ -25,9 +21,24 @@ static constexpr gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;
 static constexpr gpio_num_t I2C_SDA_GPIO = GPIO_NUM_8;
 static constexpr gpio_num_t I2C_SCL_GPIO = GPIO_NUM_9;
 
-// NVS
 static idf_hals::NvsHAL hal_nvs;
-static HubNvs nvs{hal_nvs};
+static idf_hals::HalFreertos hal_freertos;
+static idf_hals::SystemHAL hal_system;
+static idf_hals::SleepHAL hal_sleep;
+
+// NVS
+static constexpr const char* CORE_NVS_KEY = "core";
+static constexpr const char* STATS_NVS_KEY = "hub_stats";
+
+static RTC_DATA_ATTR CoreStorage g_rtc_core;
+static RtcBackend rtc_core_backend(&g_rtc_core, sizeof(CoreStorage));
+static NvsBackend nvs_core_backend{hal_nvs, CORE_NVS_KEY};
+static NvsCore nvs_core{rtc_core_backend, nvs_core_backend};
+
+static RTC_DATA_ATTR HubStats g_rtc_hub_stats;
+static RtcBackend rtc_stats_backend(&g_rtc_hub_stats, sizeof(HubStats));
+static NvsBackend nvs_stats_backend{hal_nvs, STATS_NVS_KEY};
+static HubNvs nvs_hub{rtc_stats_backend, nvs_stats_backend};
 
 // OtaManager (hub self-update via WiFi)
 static HttpClient http_client;
@@ -44,208 +55,29 @@ static OtaDependencies ota_deps = {
     .task_scheduler = task_scheduler,
     .rollback_manager = rollback_manager,
 };
-static OtaConfig ota_config{
-    .device_type = "hub",
-    .manifest_url = SERVER_URL,
-    .task_stack_size = 8192,
-    .task_priority = 5,
-    .transport = {.manifest_timeout_ms = 30000, .firmware_timeout_ms = 30000},
-    .security = {.allow_http_during_development = true},
-    .allow_same_version = false,
-    .restart_on_success = false,
-};
+
 static OtaManager ota_manager(ota_deps);
-
-static QueueHandle_t app_rx_queue = nullptr;
-
-static i2c_master_bus_handle_t i2c_bus = nullptr;
-static HalDisplaySsd1306* display_hal = nullptr;
-static FramebufferGraphicsContext* gfx_ctx = nullptr;
-
-extern "C" void ui_task(void* arg)
-{
-    auto* gfx = static_cast<FramebufferGraphicsContext*>(arg);
-    UIController ui(*gfx);
-
-    while (true) {
-        SystemState snapshot;
-
-        bool is_wifi_connected =
-            (wifi_manager::WiFiManager::get_instance().get_state() == wifi_manager::State::CONNECTED_GOT_IP);
-        bool ota_active =
-            (ota_manager.get_status() == OtaStatus::DOWNLOADING || ota_manager.get_status() == OtaStatus::VERIFYING);
-        uint8_t espnow_peers = espnow::EspNowManager::instance().get_peers().size();
-
-        if (xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
-            g_system_state.wifi_connected = is_wifi_connected;
-            g_system_state.ota_in_progress = ota_active;
-            g_system_state.espnow_peers = espnow_peers;
-            snapshot = g_system_state;
-            xSemaphoreGive(g_state_mutex);
-        }
-
-        gfx->clear(0);
-        ui.render_water_tank_screen(snapshot);
-        gfx->flush();
-
-        vTaskDelay(pdMS_TO_TICKS(500)); // 2 FPS
-    }
-}
-
-extern "C" void ota_monitor_task(void* arg)
-{
-    ESP_LOGI(TAG, "OTA Monitor task started");
-    while (true) {
-        if (ota_manager.get_status() == OtaStatus::READY_TO_RESTART) {
-            ESP_LOGW(TAG, "OTA completed successfully. Disconnecting WiFi and rebooting...");
-            auto& wifi = wifi_manager::WiFiManager::get_instance();
-            if (wifi.get_state() != wifi_manager::State::UNINITIALIZED &&
-                wifi.get_state() != wifi_manager::State::INITIALIZED) {
-                wifi.disconnect(2000);
-                wifi.stop(2000);
-            }
-            esp_restart();
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}
-
-static esp_err_t setup_hardware()
-{
-    esp_err_t err;
-
-    // NVS
-    if ((err = nvs.init_partition()) != ESP_OK) {
-        ESP_LOGE(TAG, "NVS init failed: %s", esp_err_to_name(err));
-        return err;
-    }
-    nvs.load();
-    nvs.stats.boot_count++;
-    ESP_LOGI(
-        TAG,
-        "Boot #%lu | Messages received: %lu | Commands sent: %lu",
-        nvs.stats.boot_count,
-        nvs.stats.messages_received,
-        nvs.stats.commands_sent);
-
-    // Log any armed pending commands
-    for (const auto& p : nvs.stats.pending_cmds) {
-        if (p.active) {
-            ESP_LOGW(
-                TAG,
-                "Pending command 0x%02X armed for node 0x%02X",
-                static_cast<uint8_t>(p.command),
-                static_cast<uint8_t>(p.node_id));
-        }
-    }
-
-    // WiFi
-    auto& wifi = wifi_manager::WiFiManager::get_instance();
-    if ((err = wifi.init()) != ESP_OK)
-        return err;
-    wifi.add_credentials(WIFI_SSID, WIFI_PASS); // best-effort
-    if ((err = wifi.start()) != ESP_OK)
-        return err;
-
-    // ESP-NOW (HUB role)
-    app_rx_queue = xQueueCreate(30, sizeof(espnow::AppMessage));
-    espnow::EspNowConfig espnow_cfg;
-    espnow_cfg.node_id = espnow::ReservedIds::HUB;
-    espnow_cfg.node_type = espnow::ReservedTypes::HUB;
-    espnow_cfg.app_rx_queue = app_rx_queue;
-    espnow_cfg.wifi_channel = 1;
-    espnow_cfg.heartbeat_interval_ms = 0; // Hub does not send heartbeats
-
-    auto& espnow = espnow::EspNowManager::instance();
-    if ((err = espnow.init(espnow_cfg)) != ESP_OK) {
-        ESP_LOGE(TAG, "ESP-NOW init failed: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    // Connect to WiFi synchronously
-    ESP_LOGI(TAG, "Connecting to WiFi synchronously...");
-    if ((err = wifi.connect(15000)) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to connect to WiFi: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    // Set ChannelPolicy to FIXED now that WiFi is connected to AP
-    espnow.set_channel_policy(espnow::ChannelPolicy::FIXED);
-
-    // BOOT button (active-low, input pull-up)
-    gpio_config_t btn_cfg = {};
-    btn_cfg.pin_bit_mask = 1ULL << BOOT_BUTTON_GPIO;
-    btn_cfg.mode = GPIO_MODE_INPUT;
-    btn_cfg.pull_up_en = GPIO_PULLUP_ENABLE;
-    btn_cfg.intr_type = GPIO_INTR_DISABLE;
-    gpio_config(&btn_cfg);
-
-    // OtaManager (hub self-update)
-    if (!ota_manager.init(ota_config)) {
-        ESP_LOGE(TAG, "OTA Manager init failed");
-        return ESP_FAIL;
-    }
-
-    // Mutex
-    g_state_mutex = xSemaphoreCreateMutex();
-    if (g_state_mutex == nullptr) {
-        ESP_LOGE(TAG, "Failed to create g_state_mutex");
-        return ESP_FAIL;
-    }
-
-    // Display / I2C
-    i2c_master_bus_config_t bus_config = {};
-    bus_config.i2c_port = I2C_NUM_0;
-    bus_config.sda_io_num = I2C_SDA_GPIO;
-    bus_config.scl_io_num = I2C_SCL_GPIO;
-    bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
-    bus_config.glitch_ignore_cnt = 7;
-    bus_config.flags.enable_internal_pullup = true;
-
-    if (i2c_new_master_bus(&bus_config, &i2c_bus) == ESP_OK) {
-        Ssd1306Config display_config;
-        display_config.i2c_bus = i2c_bus;
-        display_config.i2c_address = 0x3C;
-        display_config.width = 128;
-        display_config.height = 64;
-        display_config.rst_gpio = -1;
-        display_config.i2c_clk_speed_hz = 400000;
-
-        display_hal = new HalDisplaySsd1306(display_config);
-        display_hal->init();
-
-        gfx_ctx = new FramebufferGraphicsContext(*display_hal);
-        gfx_ctx->set_rotation(Rotation::ROTATION_180);
-        gfx_ctx->clear(0);
-        gfx_ctx->flush();
-        ESP_LOGI(TAG, "Display initialized");
-    }
-    else {
-        ESP_LOGE(TAG, "Failed to initialize I2C master bus");
-    }
-
-    return ESP_OK;
-}
 
 extern "C" void app_main()
 {
     ESP_LOGI(TAG, "Smart Farm Hub starting...");
 
-    if (setup_hardware() != ESP_OK) {
-        ESP_LOGE(TAG, "Critical init failure. Rebooting in 10s...");
-        vTaskDelay(pdMS_TO_TICKS(10000));
+    auto& wifi = wifi_manager::WiFiManager::get_instance();
+    auto& espnow = espnow::EspNowManager::instance();
+
+    HubApp app(nvs_core, nvs_hub, espnow, wifi, ota_manager, hal_freertos, hal_system, hal_sleep);
+
+    HubAppConfig config;
+    config.boot_button_gpio = BOOT_BUTTON_GPIO;
+    config.i2c_sda_gpio = I2C_SDA_GPIO;
+    config.i2c_scl_gpio = I2C_SCL_GPIO;
+
+    if (app.init(config) != ESP_OK) {
+        ESP_LOGE(TAG, "Critical hardware/application initialization failure. Rebooting in 10s...");
+        hal_freertos.task_delay(pdMS_TO_TICKS(10000));
         esp_restart();
         return;
     }
 
-    if (gfx_ctx) {
-        xTaskCreate(ui_task, "ui_task", 4096, gfx_ctx, 2, nullptr);
-    }
-
-    // Start OTA Monitor task
-    xTaskCreate(ota_monitor_task, "ota_monitor", 3072, nullptr, 1, nullptr);
-
-    auto& espnow = espnow::EspNowManager::instance();
-    HubApp app(espnow, nvs, BOOT_BUTTON_GPIO, app_rx_queue);
     app.run();
 }

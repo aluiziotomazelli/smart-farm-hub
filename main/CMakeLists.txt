@@ -8,8 +8,7 @@ idf_component_register(
     INCLUDE_DIRS
         "include"
     REQUIRES
-        common
-        nvs_core
+        smart-farm-common
         espnow_manager
         wifi_manager
         ota_manager
