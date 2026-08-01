@@ -83,6 +83,7 @@ HubApp::HubApp(
     espnow::IEspNowManager& espnow,
     wifi_manager::IWiFiManager& wifi,
     IOtaManager& ota_manager,
+    time_manager::ITimeManager& time_manager,
     idf_hals::IHalFreertos& rtos,
     idf_hals::ISystemHAL& hal_system,
     idf_hals::ISleepHAL& hal_sleep)
@@ -91,6 +92,7 @@ HubApp::HubApp(
     , espnow_(espnow)
     , wifi_(wifi)
     , ota_manager_(ota_manager)
+    , time_manager_(time_manager)
     , hal_rtos_(rtos)
     , hal_system_(hal_system)
     , hal_sleep_(hal_sleep)
@@ -147,6 +149,32 @@ esp_err_t HubApp::init(const HubAppConfig& config)
         ESP_LOGE(TAG, "Failed to initialize Display: %s", esp_err_to_name(err));
         session_healthy_ = false;
         // Non-critical, continue
+    }
+
+    time_manager::TimeManagerConfig time_cfg;
+    time_cfg.use_dhcp_sntp = false;
+    time_cfg.smooth_sync = false;
+    time_cfg.sync_interval_ms = 3600000; // 1 hour
+    time_cfg.default_server = "pool.ntp.org";
+    time_cfg.timezone = "<-04>4"; // UTC-4 timezone
+
+    if ((err = time_manager_.init(time_cfg)) == ESP_OK) {
+        time_manager_.start_sntp();
+
+        uint8_t timeout_s = 10;
+        while (!time_manager_.is_synchronized() && timeout_s > 0) {
+            hal_rtos_.task_delay(pdMS_TO_TICKS(1000));
+            timeout_s--;
+        }
+        if (time_manager_.is_synchronized()) {
+            ESP_LOGI(TAG, "Time successfully synchronized via SNTP");
+        }
+        else {
+            ESP_LOGW(TAG, "Time sync timeout reached (10s), proceeding without initial SNTP sync");
+        }
+    }
+    else {
+        ESP_LOGE(TAG, "Failed to init time manager: %s", esp_err_to_name(err));
     }
 
     // 9. Roolback if session is not healthy
@@ -457,6 +485,14 @@ void HubApp::handle_message(const espnow::AppMessage& msg)
         // Dispatch pending command if armed
         dispatch_pending_command(node_id);
 
+        // Temporary SyncTime command for test
+        if (set_pending_command(farm::NodeId::WATER_TANK, espnow::CommandType::SYNC_TIME)) {
+            ESP_LOGW(
+                TAG,
+                "OTA command armed for WATER_TANK. "
+                "Will be dispatched on its next message.");
+        }
+
         // ACK the message if required
         if (msg.requires_ack) {
             espnow_.confirm_reception(msg.sender_id, msg.sequence_number, espnow::AckStatus::OK);
@@ -503,7 +539,27 @@ void HubApp::dispatch_pending_command(farm::NodeId node_id)
     if (!has_pending_command(node_id, cmd))
         return;
 
-    esp_err_t err = espnow_.send_command(static_cast<espnow::NodeId>(node_id), cmd, nullptr, 0, false);
+    esp_err_t err;
+    if (cmd == static_cast<espnow::CommandType>(farm::CommandType::SYNC_TIME)) {
+        if (!time_manager_.is_synchronized()) {
+            ESP_LOGW(
+                TAG,
+                "Cannot dispatch SYNC_TIME to 0x%02X: Hub is not time-synchronized",
+                static_cast<uint8_t>(node_id));
+            return;
+        }
+        auto packet = time_manager_.create_time_packet();
+        farm::TimeSyncCommand sync_cmd;
+        sync_cmd.timestamp_ms = packet.timestamp_ms;
+        sync_cmd.tz_offset_min = packet.tz_offset_min;
+        sync_cmd.sync_source = static_cast<uint8_t>(packet.sync_source);
+        sync_cmd.flags = packet.flags;
+
+        err = espnow_.send_command(static_cast<espnow::NodeId>(node_id), cmd, &sync_cmd, sizeof(sync_cmd), false);
+    }
+    else {
+        err = espnow_.send_command(static_cast<espnow::NodeId>(node_id), cmd, nullptr, 0, false);
+    }
 
     if (err == ESP_OK) {
         clear_pending_command(node_id);

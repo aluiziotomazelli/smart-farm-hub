@@ -9,11 +9,14 @@
 #include "hal_nvs.hpp"
 #include "hal_freertos.hpp"
 #include "hal_sleep.hpp"
+#include "hal_sntp.hpp"
+#include "hal_system_time.hpp"
 
 #include "persistence_backend.hpp"
 #include "esp_attr.h"
 #include "wifi_manager.hpp"
 #include "ota_manager.hpp"
+#include "time_manager.hpp"
 
 static const char* TAG = "main";
 
@@ -25,6 +28,8 @@ static idf_hals::NvsHAL hal_nvs;
 static idf_hals::HalFreertos hal_freertos;
 static idf_hals::SystemHAL hal_system;
 static idf_hals::SleepHAL hal_sleep;
+static idf_hals::HalSntp hal_sntp;
+static idf_hals::HalSystemTime hal_system_time;
 
 // NVS
 static constexpr const char* CORE_NVS_KEY = "core";
@@ -57,6 +62,7 @@ static OtaDependencies ota_deps = {
 };
 
 static OtaManager ota_manager(ota_deps);
+static time_manager::TimeManager app_time_manager(hal_sntp, hal_system_time);
 
 extern "C" void app_main()
 {
@@ -65,7 +71,7 @@ extern "C" void app_main()
     auto& wifi = wifi_manager::WiFiManager::get_instance();
     auto& espnow = espnow::EspNowManager::instance();
 
-    HubApp app(nvs_core, nvs_hub, espnow, wifi, ota_manager, hal_freertos, hal_system, hal_sleep);
+    HubApp app(nvs_core, nvs_hub, espnow, wifi, ota_manager, app_time_manager, hal_freertos, hal_system, hal_sleep);
 
     HubAppConfig config;
     config.boot_button_gpio = BOOT_BUTTON_GPIO;

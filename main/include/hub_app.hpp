@@ -7,6 +7,7 @@
 #include "interfaces/i_hub_nvs.hpp"
 #include "interfaces/i_wifi_manager.hpp"
 #include "interfaces/i_ota_manager.hpp"
+#include "interfaces/i_time_manager.hpp"
 
 #include "interfaces/i_hal_freertos.hpp"
 #include "interfaces/i_hal_system.hpp"
@@ -32,6 +33,7 @@ public:
         espnow::IEspNowManager& espnow,
         wifi_manager::IWiFiManager& wifi,
         IOtaManager& ota_manager,
+        time_manager::ITimeManager& time_manager,
         idf_hals::IHalFreertos& rtos,
         idf_hals::ISystemHAL& hal_system,
         idf_hals::ISleepHAL& hal_sleep);
@@ -54,6 +56,7 @@ private:
     espnow::IEspNowManager& espnow_;
     wifi_manager::IWiFiManager& wifi_;
     IOtaManager& ota_manager_;
+    time_manager::ITimeManager& time_manager_;
     idf_hals::IHalFreertos& hal_rtos_;
     idf_hals::ISystemHAL& hal_system_;
     idf_hals::ISleepHAL& hal_sleep_;
