@@ -54,7 +54,7 @@ private:
     espnow::IEspNowManager& espnow_;
     wifi_manager::IWiFiManager& wifi_;
     IOtaManager& ota_manager_;
-    idf_hals::IHalFreertos& rtos_;
+    idf_hals::IHalFreertos& hal_rtos_;
     idf_hals::ISystemHAL& hal_system_;
     idf_hals::ISleepHAL& hal_sleep_;
 

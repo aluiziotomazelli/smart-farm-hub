@@ -91,7 +91,7 @@ HubApp::HubApp(
     , espnow_(espnow)
     , wifi_(wifi)
     , ota_manager_(ota_manager)
-    , rtos_(rtos)
+    , hal_rtos_(rtos)
     , hal_system_(hal_system)
     , hal_sleep_(hal_sleep)
 
@@ -279,7 +279,7 @@ esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
         ESP_LOGW(TAG, "WiFi connection attempt %u failed: %s", attempt, esp_err_to_name(err));
         if (attempt < max_attempts) {
             wifi_.disconnect(2000);
-            rtos_.task_delay(pdMS_TO_TICKS(500));
+            hal_rtos_.task_delay(pdMS_TO_TICKS(500));
         }
     }
 
@@ -289,7 +289,7 @@ esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
 
 esp_err_t HubApp::init_espnow()
 {
-    rx_queue_ = rtos_.queue_create(30, sizeof(espnow::AppMessage));
+    rx_queue_ = hal_rtos_.queue_create(30, sizeof(espnow::AppMessage));
     if (rx_queue_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create rx_queue_");
         return ESP_FAIL;
@@ -342,7 +342,7 @@ esp_err_t HubApp::init_boot_button()
 
 esp_err_t HubApp::init_display()
 {
-    g_state_mutex = rtos_.mutex_create();
+    g_state_mutex = hal_rtos_.mutex_create();
     if (g_state_mutex == nullptr) {
         ESP_LOGE(TAG, "Failed to create g_state_mutex");
         return ESP_FAIL;
@@ -374,14 +374,14 @@ esp_err_t HubApp::init_display()
         gfx_ctx->flush();
         ESP_LOGI(TAG, "Display initialized");
 
-        rtos_.task_create(ui_task, "ui_task", 4096, gfx_ctx, 2, nullptr);
+        hal_rtos_.task_create(ui_task, "ui_task", 4096, gfx_ctx, 2, nullptr);
     }
     else {
         ESP_LOGE(TAG, "Failed to initialize I2C master bus");
         return ESP_FAIL;
     }
 
-    rtos_.task_create(ota_monitor_task, "ota_monitor", 3072, &ota_manager_, 1, nullptr);
+    hal_rtos_.task_create(ota_monitor_task, "ota_monitor", 3072, &ota_manager_, 1, nullptr);
     return ESP_OK;
 }
 
@@ -392,7 +392,7 @@ void HubApp::run()
 
     espnow::AppMessage msg;
     while (true) {
-        if (rx_queue_ != nullptr && rtos_.queue_receive(rx_queue_, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (rx_queue_ != nullptr && hal_rtos_.queue_receive(rx_queue_, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
             handle_message(msg);
         }
         handle_boot_button();
@@ -415,7 +415,7 @@ void HubApp::handle_message(const espnow::AppMessage& msg)
         stats_.last_wt_distance_cm = report->distance_cm;
         stats_.last_wt_battery_mv = report->battery_mv;
 
-        if (rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
+        if (hal_rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
             g_system_state.water_level_permille = report->level_permille;
             g_system_state.water_distance_cm = report->distance_cm;
             g_system_state.last_water_update_ts = esp_timer_get_time();
@@ -438,7 +438,7 @@ void HubApp::handle_message(const espnow::AppMessage& msg)
                 g_system_state.espnow_avg_rssi = (g_system_state.espnow_avg_rssi * 3 + msg.rssi) / 4;
             }
 
-            rtos_.semaphore_give(g_state_mutex);
+            hal_rtos_.semaphore_give(g_state_mutex);
         }
 
         ESP_LOGI(
@@ -476,7 +476,7 @@ void HubApp::handle_boot_button()
     if (gpio_get_level(config_.boot_button_gpio) != 0)
         return; // not pressed (active-low)
 
-    rtos_.task_delay(pdMS_TO_TICKS(50)); // debounce
+    hal_rtos_.task_delay(pdMS_TO_TICKS(50)); // debounce
     if (gpio_get_level(config_.boot_button_gpio) != 0)
         return;
 
@@ -493,7 +493,7 @@ void HubApp::handle_boot_button()
 
     // Wait for button release
     while (gpio_get_level(config_.boot_button_gpio) == 0) {
-        rtos_.task_delay(pdMS_TO_TICKS(20));
+        hal_rtos_.task_delay(pdMS_TO_TICKS(20));
     }
 }
 
@@ -509,18 +509,18 @@ void HubApp::dispatch_pending_command(farm::NodeId node_id)
         clear_pending_command(node_id);
         stats_.commands_sent++;
 
-        if (rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
+        if (hal_rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
             g_system_state.messages_sent++;
-            rtos_.semaphore_give(g_state_mutex);
+            hal_rtos_.semaphore_give(g_state_mutex);
         }
 
         ESP_LOGW(
             TAG, "Command 0x%02X dispatched to node 0x%02X", static_cast<uint8_t>(cmd), static_cast<uint8_t>(node_id));
     }
     else {
-        if (rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
+        if (hal_rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
             g_system_state.messages_lost++;
-            rtos_.semaphore_give(g_state_mutex);
+            hal_rtos_.semaphore_give(g_state_mutex);
         }
         ESP_LOGE(
             TAG, "Failed to dispatch command to node 0x%02X: %s", static_cast<uint8_t>(node_id), esp_err_to_name(err));
