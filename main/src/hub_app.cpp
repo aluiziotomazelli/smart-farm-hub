@@ -444,13 +444,14 @@ void HubApp::handle_message(const espnow::AppMessage& msg)
         ESP_LOGI(
             TAG,
             "[WATER TANK] Level: %u\u2030 | Distance: %.1f cm | Battery: %u mV (%u%%) "
-            "| Float: %s | Backup: %s | RSSI: %d dBm",
+            "| Float: %s | Backup: %s | RSSI: %d dBm | Time: %lu ms",
             report->level_permille,
             report->distance_cm,
             report->battery_mv,
             report->battery_percent,
             report->float_switch_is_full ? "FULL" : "EMPTY",
             report->backup_mode_active ? "ON" : "OFF",
+            report->unix_time,
             msg.rssi);
 
         // Dispatch pending command if armed
