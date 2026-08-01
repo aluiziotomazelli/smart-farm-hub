@@ -20,6 +20,8 @@
 
 static const char* TAG = "HubApp";
 
+static constexpr uint16_t START_WIFI_TIMEOUT_MS = 10000;
+static constexpr uint16_t CONNECT_WIFI_TIMEOUT_MS = 15000;
 static constexpr uint16_t DISCONNECT_WIFI_TIMEOUT_MS = 2000;
 
 SystemState g_system_state;
@@ -282,7 +284,7 @@ esp_err_t HubApp::init_wifi()
         return err;
 
     wifi_.add_credentials(WIFI_SSID, WIFI_PASS);
-    err = wifi_.start();
+    err = wifi_.start(START_WIFI_TIMEOUT_MS);
     if (err != ESP_OK)
         return err;
 
@@ -298,7 +300,7 @@ esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
     esp_err_t err = ESP_FAIL;
     for (uint8_t attempt = 1; attempt <= max_attempts; ++attempt) {
         ESP_LOGI(TAG, "Connecting to WiFi (attempt %u/%u)...", attempt, max_attempts);
-        err = wifi_.connect(15000);
+        err = wifi_.connect(CONNECT_WIFI_TIMEOUT_MS);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "WiFi connected successfully");
             return ESP_OK;
@@ -306,8 +308,8 @@ esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
 
         ESP_LOGW(TAG, "WiFi connection attempt %u failed: %s", attempt, esp_err_to_name(err));
         if (attempt < max_attempts) {
-            wifi_.disconnect(2000);
-            hal_rtos_.task_delay(pdMS_TO_TICKS(500));
+            wifi_.disconnect(DISCONNECT_WIFI_TIMEOUT_MS);
+            hal_rtos_.task_delay(pdMS_TO_TICKS(1000));
         }
     }
 
@@ -472,26 +474,27 @@ void HubApp::handle_message(const espnow::AppMessage& msg)
         ESP_LOGI(
             TAG,
             "[WATER TANK] Level: %u\u2030 | Distance: %.1f cm | Battery: %u mV (%u%%) "
-            "| Float: %s | Backup: %s | RSSI: %d dBm | Time: %lu ms",
+            "| Float: %s | Backup: %s | RSSI: %d dBm | Time: %llu ms",
             report->level_permille,
             report->distance_cm,
             report->battery_mv,
             report->battery_percent,
             report->float_switch_is_full ? "FULL" : "EMPTY",
             report->backup_mode_active ? "ON" : "OFF",
-            report->unix_time,
-            msg.rssi);
+            msg.rssi,
+            static_cast<unsigned long long>(report->unix_time));
 
         // Dispatch pending command if armed
         dispatch_pending_command(node_id);
 
         // Temporary SyncTime command for test
-        if (set_pending_command(farm::NodeId::WATER_TANK, espnow::CommandType::SYNC_TIME)) {
-            ESP_LOGW(
-                TAG,
-                "OTA command armed for WATER_TANK. "
-                "Will be dispatched on its next message.");
-        }
+        // if (set_pending_command(
+        //         farm::NodeId::WATER_TANK, static_cast<espnow::CommandType>(farm::CommandType::SYNC_TIME))) {
+        //     ESP_LOGW(
+        //         TAG,
+        //         "SyncTime command armed for WATER_TANK. "
+        //         "Will be dispatched on its next message.");
+        // }
 
         // ACK the message if required
         if (msg.requires_ack) {
