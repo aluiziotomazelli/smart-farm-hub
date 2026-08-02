@@ -2,6 +2,7 @@
 idf_component_register(
     SRCS
         "main.cpp"
+        "src/display_manager.cpp"
         "src/hub_app.cpp"
         "src/hub_nvs.cpp"
         "src/ui_controller.cpp"

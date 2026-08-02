@@ -4,6 +4,7 @@
 
 #include "hal_freertos.hpp"
 #include "hal_gpio.hpp"
+#include "hal_i2c.hpp"
 #include "hal_nvs.hpp"
 #include "hal_pcnt.hpp"
 #include "hal_sleep.hpp"
@@ -16,12 +17,14 @@
 #include "rotary_encoder.hpp"
 
 #include "app_commands.hpp"
+#include "display_manager.hpp"
 #include "espnow_manager.hpp"
 #include "hub_app.hpp"
 #include "hub_nvs.hpp"
 #include "nvs_core.hpp"
 #include "ota_manager.hpp"
 #include "persistence_backend.hpp"
+#include "system_state.hpp"
 #include "time_manager.hpp"
 #include "ui_events.hpp"
 #include "ui_input_manager.hpp"
@@ -36,6 +39,7 @@ static constexpr gpio_num_t ENCODER_PIN_A = GPIO_NUM_4;
 static constexpr gpio_num_t ENCODER_PIN_B = GPIO_NUM_5;
 static constexpr gpio_num_t ENCODER_PIN_SW = GPIO_NUM_6;
 
+// HALs intances to be used by the application and other components
 static idf_hals::NvsHAL hal_nvs;
 static idf_hals::HalFreertos hal_freertos;
 static idf_hals::SystemHAL hal_system;
@@ -45,22 +49,25 @@ static idf_hals::HalSystemTime hal_system_time;
 static idf_hals::GpioHAL hal_gpio;
 static idf_hals::TimerHAL hal_timer;
 static idf_hals::HalPcnt hal_pcnt;
+static idf_hals::I2cHAL hal_i2c;
 
 // NVS
 static constexpr const char* CORE_NVS_KEY = "core";
 static constexpr const char* STATS_NVS_KEY = "hub_stats";
 
+// Core NVS
 static RTC_DATA_ATTR CoreStorage g_rtc_core;
 static RtcBackend rtc_core_backend(&g_rtc_core, sizeof(CoreStorage));
 static NvsBackend nvs_core_backend{hal_nvs, CORE_NVS_KEY};
 static NvsCore nvs_core{rtc_core_backend, nvs_core_backend};
 
+// Hub Stats NVS
 static RTC_DATA_ATTR HubStats g_rtc_hub_stats;
 static RtcBackend rtc_stats_backend(&g_rtc_hub_stats, sizeof(HubStats));
 static NvsBackend nvs_stats_backend{hal_nvs, STATS_NVS_KEY};
 static HubNvs nvs_hub{rtc_stats_backend, nvs_stats_backend};
 
-// OtaManager (hub self-update via WiFi)
+// OtaManager - hub self-update via WiFi
 static HttpClient http_client;
 static ManifestParser manifest_parser;
 static OtaSession ota_session;
@@ -95,6 +102,11 @@ extern "C" void app_main()
 {
     ESP_LOGI(TAG, "Smart Farm Hub starting...");
 
+    g_state_mutex = hal_freertos.mutex_create();
+    if (g_state_mutex == nullptr) {
+        ESP_LOGE(TAG, "Failed to create g_state_mutex");
+    }
+
     QueueHandle_t ui_event_queue = hal_freertos.queue_create(20, sizeof(UiEvent));
     QueueHandle_t app_cmd_queue = hal_freertos.queue_create(20, sizeof(AppCommand));
 
@@ -113,13 +125,23 @@ extern "C" void app_main()
     auto& wifi = wifi_manager::WiFiManager::get_instance();
     auto& espnow = espnow::EspNowManager::instance();
 
+    DisplayManagerConfig display_cfg{
+        .sda_pin = I2C_SDA_GPIO,
+        .scl_pin = I2C_SCL_GPIO,
+    };
+    static DisplayManager display_mgr(ui_event_queue, app_cmd_queue, hal_freertos, hal_i2c, display_cfg);
+    if (display_mgr.init() == ESP_OK) {
+        display_mgr.start();
+    }
+    else {
+        ESP_LOGE(TAG, "Failed to initialize DisplayManager");
+    }
+
     HubApp app(nvs_core, nvs_hub, espnow, wifi, ota_manager, app_time_manager, hal_freertos, hal_system, hal_sleep);
 
     HubAppConfig config;
-    config.i2c_sda_gpio = I2C_SDA_GPIO;
-    config.i2c_scl_gpio = I2C_SCL_GPIO;
 
-    if (app.init(config, ui_event_queue, app_cmd_queue) != ESP_OK) {
+    if (app.init(config, app_cmd_queue) != ESP_OK) {
         ESP_LOGE(TAG, "Critical hardware/application initialization failure. Rebooting in 10s...");
         hal_freertos.task_delay(pdMS_TO_TICKS(10000));
         esp_restart();

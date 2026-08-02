@@ -13,10 +13,6 @@
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
 #include "driver/gpio.h"
-#include "driver/i2c_master.h"
-#include "ui_controller.hpp"
-#include "hal_display_ssd1306.hpp"
-#include "framebuffer_graphics_context.hpp"
 
 static const char* TAG = "HubApp";
 
@@ -26,57 +22,6 @@ static constexpr uint16_t DISCONNECT_WIFI_TIMEOUT_MS = 2000;
 
 SystemState g_system_state;
 SemaphoreHandle_t g_state_mutex = nullptr;
-
-static i2c_master_bus_handle_t i2c_bus = nullptr;
-static HalDisplaySsd1306* display_hal = nullptr;
-static FramebufferGraphicsContext* gfx_ctx = nullptr;
-
-struct DisplayTaskArgs
-{
-    FramebufferGraphicsContext* gfx;
-    QueueHandle_t ui_event_queue;
-    QueueHandle_t app_cmd_queue;
-};
-
-extern "C" void display_task(void* arg)
-{
-    auto* args = static_cast<DisplayTaskArgs*>(arg);
-    UIController ui(*args->gfx, args->app_cmd_queue);
-
-    while (true) {
-        UiEvent event;
-        if (args->ui_event_queue != nullptr) {
-            if (xQueueReceive(args->ui_event_queue, &event, pdMS_TO_TICKS(500)) == pdTRUE) {
-                ui.handle_event(event);
-                while (xQueueReceive(args->ui_event_queue, &event, 0) == pdTRUE) {
-                    ui.handle_event(event);
-                }
-            }
-        }
-        else {
-            vTaskDelay(pdMS_TO_TICKS(500));
-        }
-
-        SystemState snapshot;
-
-        bool is_wifi_connected =
-            (wifi_manager::WiFiManager::get_instance().get_state() == wifi_manager::State::CONNECTED_GOT_IP);
-        bool ota_active = false;
-        uint8_t espnow_peers = espnow::EspNowManager::instance().get_peers().size();
-
-        if (xSemaphoreTake(g_state_mutex, portMAX_DELAY) == pdTRUE) {
-            g_system_state.wifi_connected = is_wifi_connected;
-            g_system_state.ota_in_progress = ota_active;
-            g_system_state.espnow_peers = espnow_peers;
-            snapshot = g_system_state;
-            xSemaphoreGive(g_state_mutex);
-        }
-
-        args->gfx->clear(0);
-        ui.render_current_screen(snapshot);
-        args->gfx->flush();
-    }
-}
 
 HubApp::HubApp(
     INvsCore& core_storage,
@@ -101,9 +46,10 @@ HubApp::HubApp(
 {
 }
 
-esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t ui_event_queue, QueueHandle_t app_cmd_queue)
+esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t app_cmd_queue)
 {
     config_ = config;
+    app_cmd_queue_ = app_cmd_queue;
     esp_err_t err;
 
     if ((err = init_ota_manager()) != ESP_OK) {
@@ -138,12 +84,6 @@ esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t ui_event_queue,
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW: %s", esp_err_to_name(err));
         session_healthy_ = false;
         return err;
-    }
-
-    if ((err = init_display(ui_event_queue, app_cmd_queue)) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize Display: %s", esp_err_to_name(err));
-        session_healthy_ = false;
-        // Non-critical, continue
     }
 
     time_manager::TimeManagerConfig time_cfg;
@@ -352,58 +292,6 @@ esp_err_t HubApp::init_ota_manager()
     if (!ota_manager_.init(ota_config)) {
         return ESP_FAIL;
     }
-    return ESP_OK;
-}
-
-esp_err_t HubApp::init_display(QueueHandle_t ui_event_queue, QueueHandle_t app_cmd_queue)
-{
-    ui_event_queue_ = ui_event_queue;
-    app_cmd_queue_ = app_cmd_queue;
-
-    g_state_mutex = hal_rtos_.mutex_create();
-    if (g_state_mutex == nullptr) {
-        ESP_LOGE(TAG, "Failed to create g_state_mutex");
-        return ESP_FAIL;
-    }
-
-    i2c_master_bus_config_t bus_config = {};
-    bus_config.i2c_port = I2C_NUM_0;
-    bus_config.sda_io_num = config_.i2c_sda_gpio;
-    bus_config.scl_io_num = config_.i2c_scl_gpio;
-    bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
-    bus_config.glitch_ignore_cnt = 7;
-    bus_config.flags.enable_internal_pullup = true;
-
-    if (i2c_new_master_bus(&bus_config, &i2c_bus) == ESP_OK) {
-        Ssd1306Config display_config;
-        display_config.i2c_bus = i2c_bus;
-        display_config.i2c_address = 0x3C;
-        display_config.width = 128;
-        display_config.height = 64;
-        display_config.rst_gpio = -1;
-        display_config.i2c_clk_speed_hz = 400000;
-
-        display_hal = new HalDisplaySsd1306(display_config);
-        display_hal->init();
-
-        gfx_ctx = new FramebufferGraphicsContext(*display_hal);
-        gfx_ctx->set_rotation(Rotation::ROTATION_180);
-        gfx_ctx->clear(0);
-        gfx_ctx->flush();
-        ESP_LOGI(TAG, "Display initialized");
-
-        static DisplayTaskArgs display_args;
-        display_args.gfx = gfx_ctx;
-        display_args.ui_event_queue = ui_event_queue_;
-        display_args.app_cmd_queue = app_cmd_queue_;
-
-        hal_rtos_.task_create(display_task, "display_task", 4096, &display_args, 2, nullptr);
-    }
-    else {
-        ESP_LOGE(TAG, "Failed to initialize I2C master bus");
-        return ESP_FAIL;
-    }
-
     return ESP_OK;
 }
 

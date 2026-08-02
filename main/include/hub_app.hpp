@@ -21,8 +21,7 @@
 
 struct HubAppConfig
 {
-    gpio_num_t i2c_sda_gpio = GPIO_NUM_8;
-    gpio_num_t i2c_scl_gpio = GPIO_NUM_9;
+    // Placeholder for future configuration options
 };
 
 class HubApp
@@ -39,10 +38,7 @@ public:
         idf_hals::ISystemHAL& hal_system,
         idf_hals::ISleepHAL& hal_sleep);
 
-    esp_err_t init(
-        const HubAppConfig& config = {},
-        QueueHandle_t ui_event_queue = nullptr,
-        QueueHandle_t app_cmd_queue = nullptr);
+    esp_err_t init(const HubAppConfig& config = {}, QueueHandle_t app_cmd_queue = nullptr);
     void run();
 
     void handle_app_command(const AppCommand& cmd);
@@ -68,7 +64,6 @@ private:
     idf_hals::ISleepHAL& hal_sleep_;
 
     QueueHandle_t rx_queue_ = nullptr;
-    QueueHandle_t ui_event_queue_ = nullptr;
     QueueHandle_t app_cmd_queue_ = nullptr;
     HubAppConfig config_;
 
@@ -78,7 +73,6 @@ private:
     esp_err_t connect_wifi_with_retry(uint8_t max_attempts = 2);
     esp_err_t init_espnow();
     esp_err_t init_ota_manager();
-    esp_err_t init_display(QueueHandle_t ui_event_queue, QueueHandle_t app_cmd_queue);
 
     void log_boot_summary();
     void check_firmware();
