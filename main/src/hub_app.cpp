@@ -31,12 +31,32 @@ static i2c_master_bus_handle_t i2c_bus = nullptr;
 static HalDisplaySsd1306* display_hal = nullptr;
 static FramebufferGraphicsContext* gfx_ctx = nullptr;
 
-extern "C" void ui_task(void* arg)
+struct DisplayTaskArgs
 {
-    auto* gfx = static_cast<FramebufferGraphicsContext*>(arg);
-    UIController ui(*gfx);
+    FramebufferGraphicsContext* gfx;
+    QueueHandle_t ui_event_queue;
+    QueueHandle_t app_cmd_queue;
+};
+
+extern "C" void display_task(void* arg)
+{
+    auto* args = static_cast<DisplayTaskArgs*>(arg);
+    UIController ui(*args->gfx, args->app_cmd_queue);
 
     while (true) {
+        UiEvent event;
+        if (args->ui_event_queue != nullptr) {
+            if (xQueueReceive(args->ui_event_queue, &event, pdMS_TO_TICKS(500)) == pdTRUE) {
+                ui.handle_event(event);
+                while (xQueueReceive(args->ui_event_queue, &event, 0) == pdTRUE) {
+                    ui.handle_event(event);
+                }
+            }
+        }
+        else {
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+
         SystemState snapshot;
 
         bool is_wifi_connected =
@@ -52,30 +72,9 @@ extern "C" void ui_task(void* arg)
             xSemaphoreGive(g_state_mutex);
         }
 
-        gfx->clear(0);
-        ui.render_water_tank_screen(snapshot);
-        gfx->flush();
-
-        vTaskDelay(pdMS_TO_TICKS(500)); // 2 FPS
-    }
-}
-
-extern "C" void ota_monitor_task(void* arg)
-{
-    ESP_LOGI(TAG, "OTA Monitor task started");
-    while (true) {
-        auto& ota_mgr = *static_cast<IOtaManager*>(arg);
-        if (ota_mgr.get_status() == OtaStatus::READY_TO_RESTART) {
-            ESP_LOGW(TAG, "OTA completed successfully. Disconnecting WiFi and rebooting...");
-            auto& wifi = wifi_manager::WiFiManager::get_instance();
-            if (wifi.get_state() != wifi_manager::State::UNINITIALIZED &&
-                wifi.get_state() != wifi_manager::State::INITIALIZED) {
-                wifi.disconnect(2000);
-                wifi.stop(2000);
-            }
-            esp_restart();
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        args->gfx->clear(0);
+        ui.render_current_screen(snapshot);
+        args->gfx->flush();
     }
 }
 
@@ -102,7 +101,7 @@ HubApp::HubApp(
 {
 }
 
-esp_err_t HubApp::init(const HubAppConfig& config)
+esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t ui_event_queue, QueueHandle_t app_cmd_queue)
 {
     config_ = config;
     esp_err_t err;
@@ -141,13 +140,7 @@ esp_err_t HubApp::init(const HubAppConfig& config)
         return err;
     }
 
-    if ((err = init_boot_button()) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize BOOT button: %s", esp_err_to_name(err));
-        session_healthy_ = false;
-        return err;
-    }
-
-    if ((err = init_display()) != ESP_OK) {
+    if ((err = init_display(ui_event_queue, app_cmd_queue)) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize Display: %s", esp_err_to_name(err));
         session_healthy_ = false;
         // Non-critical, continue
@@ -288,7 +281,7 @@ esp_err_t HubApp::init_wifi()
     if (err != ESP_OK)
         return err;
 
-    return connect_wifi_with_retry(2);
+    return connect_wifi_with_retry(4);
 }
 
 esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
@@ -297,6 +290,7 @@ esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
         return ESP_OK;
     }
 
+    static constexpr uint16_t DELAY_BETWEEN_ATTEMPTS_MS = 1500;
     esp_err_t err = ESP_FAIL;
     for (uint8_t attempt = 1; attempt <= max_attempts; ++attempt) {
         ESP_LOGI(TAG, "Connecting to WiFi (attempt %u/%u)...", attempt, max_attempts);
@@ -309,7 +303,8 @@ esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
         ESP_LOGW(TAG, "WiFi connection attempt %u failed: %s", attempt, esp_err_to_name(err));
         if (attempt < max_attempts) {
             wifi_.disconnect(DISCONNECT_WIFI_TIMEOUT_MS);
-            hal_rtos_.task_delay(pdMS_TO_TICKS(1000));
+            uint32_t delay_ms = DELAY_BETWEEN_ATTEMPTS_MS * attempt;
+            hal_rtos_.task_delay(pdMS_TO_TICKS(delay_ms));
         }
     }
 
@@ -360,18 +355,11 @@ esp_err_t HubApp::init_ota_manager()
     return ESP_OK;
 }
 
-esp_err_t HubApp::init_boot_button()
+esp_err_t HubApp::init_display(QueueHandle_t ui_event_queue, QueueHandle_t app_cmd_queue)
 {
-    gpio_config_t btn_cfg = {};
-    btn_cfg.pin_bit_mask = 1ULL << config_.boot_button_gpio;
-    btn_cfg.mode = GPIO_MODE_INPUT;
-    btn_cfg.pull_up_en = GPIO_PULLUP_ENABLE;
-    btn_cfg.intr_type = GPIO_INTR_DISABLE;
-    return gpio_config(&btn_cfg);
-}
+    ui_event_queue_ = ui_event_queue;
+    app_cmd_queue_ = app_cmd_queue;
 
-esp_err_t HubApp::init_display()
-{
     g_state_mutex = hal_rtos_.mutex_create();
     if (g_state_mutex == nullptr) {
         ESP_LOGE(TAG, "Failed to create g_state_mutex");
@@ -404,14 +392,18 @@ esp_err_t HubApp::init_display()
         gfx_ctx->flush();
         ESP_LOGI(TAG, "Display initialized");
 
-        hal_rtos_.task_create(ui_task, "ui_task", 4096, gfx_ctx, 2, nullptr);
+        static DisplayTaskArgs display_args;
+        display_args.gfx = gfx_ctx;
+        display_args.ui_event_queue = ui_event_queue_;
+        display_args.app_cmd_queue = app_cmd_queue_;
+
+        hal_rtos_.task_create(display_task, "display_task", 4096, &display_args, 2, nullptr);
     }
     else {
         ESP_LOGE(TAG, "Failed to initialize I2C master bus");
         return ESP_FAIL;
     }
 
-    hal_rtos_.task_create(ota_monitor_task, "ota_monitor", 3072, &ota_manager_, 1, nullptr);
     return ESP_OK;
 }
 
@@ -421,11 +413,45 @@ void HubApp::run()
         TAG, "Hub running. Boot #%lu. Listening for node messages...", static_cast<unsigned long>(core_.boot_count));
 
     espnow::AppMessage msg;
+    AppCommand cmd;
     while (true) {
-        if (rx_queue_ != nullptr && hal_rtos_.queue_receive(rx_queue_, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
+        if (rx_queue_ != nullptr && hal_rtos_.queue_receive(rx_queue_, &msg, pdMS_TO_TICKS(50)) == pdTRUE) {
             handle_message(msg);
         }
-        handle_boot_button();
+        if (app_cmd_queue_ != nullptr && hal_rtos_.queue_receive(app_cmd_queue_, &cmd, 0) == pdTRUE) {
+            handle_app_command(cmd);
+        }
+    }
+}
+
+void HubApp::handle_app_command(const AppCommand& cmd)
+{
+    ESP_LOGI(
+        TAG,
+        "Processing AppCommand: espnow_cmd=0x%02X, target_node=0x%02X, param=%lu",
+        static_cast<uint8_t>(cmd.espnow_cmd),
+        static_cast<uint8_t>(cmd.target_node),
+        static_cast<unsigned long>(cmd.param));
+
+    if (cmd.target_node == farm::NodeId::HUB) {
+        if (cmd.espnow_cmd == espnow::CommandType::REBOOT) {
+            ESP_LOGW(TAG, "Reboot requested via AppCommand! Disconnecting WiFi and rebooting in 1s...");
+            if (wifi_.get_state() != wifi_manager::State::UNINITIALIZED &&
+                wifi_.get_state() != wifi_manager::State::INITIALIZED) {
+                wifi_.disconnect(1000);
+                wifi_.stop(1000);
+            }
+            hal_rtos_.task_delay(pdMS_TO_TICKS(1000));
+            esp_restart();
+        }
+    }
+    else {
+        set_pending_command(cmd.target_node, cmd.espnow_cmd);
+        ESP_LOGI(
+            TAG,
+            "Armed command 0x%02X for target node 0x%02X",
+            static_cast<uint8_t>(cmd.espnow_cmd),
+            static_cast<uint8_t>(cmd.target_node));
     }
 }
 
@@ -502,38 +528,30 @@ void HubApp::handle_message(const espnow::AppMessage& msg)
         }
         break;
     }
+    case farm::PayloadType::OTA_STATUS_REPORT:
+    {
+        const auto* report = reinterpret_cast<const farm::OtaStatusReport*>(msg.payload);
+        ESP_LOGI(
+            TAG,
+            "[OTA STATUS REPORT] Node: 0x%02X | Result: %u | Error: 0x%02X | FW Version: %u.%u.%u",
+            msg.sender_id,
+            static_cast<uint8_t>(report->result),
+            static_cast<uint8_t>(report->error_code),
+            report->fw_major,
+            report->fw_minor,
+            report->fw_patch);
+
+        if (msg.requires_ack) {
+            espnow_.confirm_reception(msg.sender_id, msg.sequence_number, espnow::AckStatus::OK);
+        }
+        break;
+    }
     default:
         ESP_LOGW(TAG, "Unknown payload 0x%02X from node 0x%02X", msg.payload_type, msg.sender_id);
         break;
     }
 
     hub_storage_.save_app_data(stats_);
-}
-
-void HubApp::handle_boot_button()
-{
-    if (gpio_get_level(config_.boot_button_gpio) != 0)
-        return; // not pressed (active-low)
-
-    hal_rtos_.task_delay(pdMS_TO_TICKS(50)); // debounce
-    if (gpio_get_level(config_.boot_button_gpio) != 0)
-        return;
-
-    // Arm OTA for the water-tank node
-    if (set_pending_command(farm::NodeId::WATER_TANK, espnow::CommandType::START_OTA)) {
-        ESP_LOGW(
-            TAG,
-            "OTA command armed for WATER_TANK. "
-            "Will be dispatched on its next message.");
-    }
-    else {
-        ESP_LOGI(TAG, "OTA already armed for WATER_TANK.");
-    }
-
-    // Wait for button release
-    while (gpio_get_level(config_.boot_button_gpio) == 0) {
-        hal_rtos_.task_delay(pdMS_TO_TICKS(20));
-    }
 }
 
 void HubApp::dispatch_pending_command(farm::NodeId node_id)

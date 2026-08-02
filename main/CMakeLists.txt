@@ -5,6 +5,7 @@ idf_component_register(
         "src/hub_app.cpp"
         "src/hub_nvs.cpp"
         "src/ui_controller.cpp"
+        "src/ui_input_manager.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES
@@ -15,4 +16,6 @@ idf_component_register(
         idf_hals
         display_gfx
         time_manager
+        ui_inputs
 )
+

@@ -1,28 +1,40 @@
 // main/main.cpp
+#include "esp_attr.h"
 #include "esp_log.h"
-#include "espnow_manager.hpp"
-#include "hub_app.hpp"
-#include "nvs_core.hpp"
-#include "hub_nvs.hpp"
 
-#include "hal_system.hpp"
-#include "hal_nvs.hpp"
 #include "hal_freertos.hpp"
+#include "hal_gpio.hpp"
+#include "hal_nvs.hpp"
+#include "hal_pcnt.hpp"
 #include "hal_sleep.hpp"
 #include "hal_sntp.hpp"
+#include "hal_system.hpp"
 #include "hal_system_time.hpp"
+#include "hal_timer.hpp"
 
-#include "persistence_backend.hpp"
-#include "esp_attr.h"
-#include "wifi_manager.hpp"
+#include "button.hpp"
+#include "rotary_encoder.hpp"
+
+#include "app_commands.hpp"
+#include "espnow_manager.hpp"
+#include "hub_app.hpp"
+#include "hub_nvs.hpp"
+#include "nvs_core.hpp"
 #include "ota_manager.hpp"
+#include "persistence_backend.hpp"
 #include "time_manager.hpp"
+#include "ui_events.hpp"
+#include "ui_input_manager.hpp"
+#include "wifi_manager.hpp"
 
 static const char* TAG = "main";
 
 static constexpr gpio_num_t BOOT_BUTTON_GPIO = GPIO_NUM_0;
 static constexpr gpio_num_t I2C_SDA_GPIO = GPIO_NUM_8;
 static constexpr gpio_num_t I2C_SCL_GPIO = GPIO_NUM_9;
+static constexpr gpio_num_t ENCODER_PIN_A = GPIO_NUM_4;
+static constexpr gpio_num_t ENCODER_PIN_B = GPIO_NUM_5;
+static constexpr gpio_num_t ENCODER_PIN_SW = GPIO_NUM_6;
 
 static idf_hals::NvsHAL hal_nvs;
 static idf_hals::HalFreertos hal_freertos;
@@ -30,6 +42,9 @@ static idf_hals::SystemHAL hal_system;
 static idf_hals::SleepHAL hal_sleep;
 static idf_hals::HalSntp hal_sntp;
 static idf_hals::HalSystemTime hal_system_time;
+static idf_hals::GpioHAL hal_gpio;
+static idf_hals::TimerHAL hal_timer;
+static idf_hals::HalPcnt hal_pcnt;
 
 // NVS
 static constexpr const char* CORE_NVS_KEY = "core";
@@ -64,9 +79,36 @@ static OtaDependencies ota_deps = {
 static OtaManager ota_manager(ota_deps);
 static time_manager::TimeManager app_time_manager(hal_sntp, hal_system_time);
 
+// UI Inputs & Queues
+static ui_inputs::RotaryEncoderConfig g_encoder_cfg{
+    .half_step_mode = false,
+    .acceleration_enabled = true,
+    .accel_gap_ms = 50,
+    .accel_max_multiplier = 5,
+    .glitch_filter_ns = 1000,
+};
+static ui_inputs::RotaryEncoder g_encoder(hal_pcnt, hal_timer, ENCODER_PIN_A, ENCODER_PIN_B, g_encoder_cfg);
+static ui_inputs::Button g_encoder_push(hal_gpio, hal_timer, ENCODER_PIN_SW, /*active_low=*/true);
+static ui_inputs::Button g_boot_button(hal_gpio, hal_timer, BOOT_BUTTON_GPIO, /*active_low=*/true);
+
 extern "C" void app_main()
 {
     ESP_LOGI(TAG, "Smart Farm Hub starting...");
+
+    QueueHandle_t ui_event_queue = hal_freertos.queue_create(20, sizeof(UiEvent));
+    QueueHandle_t app_cmd_queue = hal_freertos.queue_create(20, sizeof(AppCommand));
+
+    if (ui_event_queue == nullptr || app_cmd_queue == nullptr) {
+        ESP_LOGE(TAG, "Failed to create UI / App queues");
+    }
+
+    static UiInputManager ui_input_mgr(g_encoder, g_encoder_push, g_boot_button, ui_event_queue, hal_freertos);
+    if (ui_input_mgr.init() == ESP_OK) {
+        ui_input_mgr.start();
+    }
+    else {
+        ESP_LOGE(TAG, "Failed to initialize UiInputManager");
+    }
 
     auto& wifi = wifi_manager::WiFiManager::get_instance();
     auto& espnow = espnow::EspNowManager::instance();
@@ -74,11 +116,10 @@ extern "C" void app_main()
     HubApp app(nvs_core, nvs_hub, espnow, wifi, ota_manager, app_time_manager, hal_freertos, hal_system, hal_sleep);
 
     HubAppConfig config;
-    config.boot_button_gpio = BOOT_BUTTON_GPIO;
     config.i2c_sda_gpio = I2C_SDA_GPIO;
     config.i2c_scl_gpio = I2C_SCL_GPIO;
 
-    if (app.init(config) != ESP_OK) {
+    if (app.init(config, ui_event_queue, app_cmd_queue) != ESP_OK) {
         ESP_LOGE(TAG, "Critical hardware/application initialization failure. Rebooting in 10s...");
         hal_freertos.task_delay(pdMS_TO_TICKS(10000));
         esp_restart();
