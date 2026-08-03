@@ -86,7 +86,6 @@ void MessageDispatcher::task_entry(void* arg)
     if (self) {
         self->dispatch_loop();
     }
-    vTaskDelete(NULL);
 }
 
 void MessageDispatcher::dispatch_loop()
