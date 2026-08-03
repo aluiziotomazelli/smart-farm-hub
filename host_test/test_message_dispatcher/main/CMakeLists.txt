@@ -12,7 +12,7 @@ idf_component_register(
         "../../../main/include"
         "../../../main"
         "../../../components/idf_hals/mocks"
-        "../../../components/smart-farm-common/host_test/common"
+        "../../mocks"
     REQUIRES 
         gtest
         smart-farm-common
