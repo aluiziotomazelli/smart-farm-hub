@@ -47,8 +47,7 @@ void WaterTankHandler::handle_payload(const espnow::AppMessage& msg)
         uint8_t raw_status = static_cast<uint8_t>(report->status);
         state_.water_fill_state = (raw_status >> 4) & 0x0F;
         uint8_t status_lower = raw_status & 0x0F;
-        state_.water_sensor_status =
-            static_cast<farm::SensorStatus>((status_lower == 0x0F) ? 0xFF : status_lower);
+        state_.water_sensor_status = static_cast<farm::SensorStatus>((status_lower == 0x0F) ? 0xFF : status_lower);
 
         state_.espnow_last_rssi = msg.rssi;
         if (state_.espnow_avg_rssi == 0) {
@@ -106,10 +105,10 @@ void WaterTankHandler::dispatch_pending_command(farm::NodeId node_id)
         sync_cmd.sync_source = static_cast<uint8_t>(packet.sync_source);
         sync_cmd.flags = packet.flags;
 
-        err = espnow_.send_command(static_cast<espnow::NodeId>(node_id), cmd, &sync_cmd, sizeof(sync_cmd), false);
+        err = espnow_.send_command(node_id, cmd, &sync_cmd, sizeof(sync_cmd), false);
     }
     else {
-        err = espnow_.send_command(static_cast<espnow::NodeId>(node_id), cmd, nullptr, 0, false);
+        err = espnow_.send_command(node_id, cmd, nullptr, 0, false);
     }
 
     if (err == ESP_OK) {
