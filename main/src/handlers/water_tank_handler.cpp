@@ -39,23 +39,16 @@ void WaterTankHandler::handle_payload(const espnow::AppMessage& msg)
     stats_.last_wt_battery_mv = report->battery_mv;
 
     if (rtos_.semaphore_take(state_mutex_, portMAX_DELAY) == pdTRUE) {
+        state_.last_water_update_ts = esp_timer_get_time() / 1000;
         state_.water_level_permille = report->level_permille;
         state_.water_distance_cm = report->distance_cm;
-        state_.last_water_update_ts = esp_timer_get_time();
         state_.water_battery_mv = report->battery_mv;
-
-        uint8_t raw_status = static_cast<uint8_t>(report->status);
-        state_.water_fill_state = (raw_status >> 4) & 0x0F;
-        uint8_t status_lower = raw_status & 0x0F;
-        state_.water_sensor_status = static_cast<farm::SensorStatus>((status_lower == 0x0F) ? 0xFF : status_lower);
-
-        state_.espnow_last_rssi = msg.rssi;
-        if (state_.espnow_avg_rssi == 0) {
-            state_.espnow_avg_rssi = msg.rssi;
-        }
-        else {
-            state_.espnow_avg_rssi = (state_.espnow_avg_rssi * 3 + msg.rssi) / 4;
-        }
+        state_.water_battery_percent = report->battery_percent;
+        state_.water_battery_state = report->battery_state;
+        state_.water_sensor_status = report->status;
+        state_.water_float_switch_full = report->float_switch_is_full;
+        state_.water_backup_mode = report->backup_mode_active;
+        state_.water_node_unix_time = report->unix_time;
 
         rtos_.semaphore_give(state_mutex_);
     }
@@ -115,19 +108,10 @@ void WaterTankHandler::dispatch_pending_command(farm::NodeId node_id)
         clear_pending_command(node_id);
         stats_.commands_sent++;
 
-        if (rtos_.semaphore_take(state_mutex_, portMAX_DELAY) == pdTRUE) {
-            state_.messages_sent++;
-            rtos_.semaphore_give(state_mutex_);
-        }
-
         ESP_LOGW(
             TAG, "Command 0x%02X dispatched to node 0x%02X", static_cast<uint8_t>(cmd), static_cast<uint8_t>(node_id));
     }
     else {
-        if (rtos_.semaphore_take(state_mutex_, portMAX_DELAY) == pdTRUE) {
-            state_.messages_lost++;
-            rtos_.semaphore_give(state_mutex_);
-        }
         ESP_LOGE(
             TAG, "Failed to dispatch command to node 0x%02X: %s", static_cast<uint8_t>(node_id), esp_err_to_name(err));
     }

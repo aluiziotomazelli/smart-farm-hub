@@ -362,29 +362,20 @@ void HubApp::dispatch_pending_command(farm::NodeId node_id)
         sync_cmd.sync_source = static_cast<uint8_t>(packet.sync_source);
         sync_cmd.flags = packet.flags;
 
-        err = espnow_.send_command(static_cast<espnow::NodeId>(node_id), cmd, &sync_cmd, sizeof(sync_cmd), false);
+        err = espnow_.send_command(node_id, cmd, &sync_cmd, sizeof(sync_cmd), false);
     }
     else {
-        err = espnow_.send_command(static_cast<espnow::NodeId>(node_id), cmd, nullptr, 0, false);
+        err = espnow_.send_command(node_id, cmd, nullptr, 0, false);
     }
 
     if (err == ESP_OK) {
         clear_pending_command(node_id);
         stats_.commands_sent++;
 
-        if (hal_rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
-            g_system_state.messages_sent++;
-            hal_rtos_.semaphore_give(g_state_mutex);
-        }
-
         ESP_LOGW(
             TAG, "Command 0x%02X dispatched to node 0x%02X", static_cast<uint8_t>(cmd), static_cast<uint8_t>(node_id));
     }
     else {
-        if (hal_rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
-            g_system_state.messages_lost++;
-            hal_rtos_.semaphore_give(g_state_mutex);
-        }
         ESP_LOGE(
             TAG, "Failed to dispatch command to node 0x%02X: %s", static_cast<uint8_t>(node_id), esp_err_to_name(err));
     }

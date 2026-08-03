@@ -9,15 +9,26 @@
 #include "ui_events.hpp"
 #include "app_commands.hpp"
 
-enum class ScreenMode { MAIN_SCREEN, WATER_TANK_SCREEN, STATS_SCREEN, BOOT_SCREEN };
+enum class ScreenMode
+{
+    MAIN_SCREEN,
+    WATER_TANK_SCREEN,
+    SOLAR_SCREEN,
+    LOADS_SCREEN,
+    STATS_SCREEN,
+    BOOT_SCREEN
+};
 
-class UIController {
+class UIController
+{
 public:
     explicit UIController(IGraphicsContext& gfx, QueueHandle_t app_cmd_queue = nullptr);
     void render_main_screen(const SystemState& state);
     void render_stats_screen(const SystemState& state);
     void render_boot_screen();
     void render_water_tank_screen(const SystemState& state);
+    void render_solar_screen(const SystemState& state);
+    void render_loads_screen(const SystemState& state);
     void render_current_screen(const SystemState& state);
 
     void handle_event(const UiEvent& event);
@@ -28,4 +39,6 @@ private:
     IGraphicsContext& gfx_;
     QueueHandle_t app_cmd_queue_;
     ScreenMode current_screen_{ScreenMode::WATER_TANK_SCREEN};
+
+    const char* battery_state_to_string(farm::BatteryState state);
 };
