@@ -29,17 +29,17 @@ set(COMPONENTS
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-project(test_message_dispatcher)
+project(test_hub)
 
-set(EXTRACT_PATTERNS_test_message_dispatcher 
+set(EXTRACT_PATTERNS_test_hub 
     "*/main/src/*"
 )
 
-set(REMOVE_PATTERNS_test_message_dispatcher 
+set(REMOVE_PATTERNS_test_hub 
     "*/main/include/*"
     "*host_test/*"
     "*build/*"
 )
 
 include("../coverage_common.cmake")
-setup_gtest_coverage(test_message_dispatcher test_message_dispatcher.elf)
+setup_gtest_coverage(test_hub test_hub.elf)
