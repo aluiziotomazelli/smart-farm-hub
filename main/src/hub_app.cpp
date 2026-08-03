@@ -46,7 +46,7 @@ HubApp::HubApp(
 {
 }
 
-esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t app_cmd_queue)
+esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t app_cmd_queue, QueueHandle_t rx_queue)
 {
     config_ = config;
     app_cmd_queue_ = app_cmd_queue;
@@ -80,7 +80,7 @@ esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t app_cmd_queue)
         return err;
     }
 
-    if ((err = init_espnow()) != ESP_OK) {
+    if ((err = init_espnow(rx_queue)) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW: %s", esp_err_to_name(err));
         session_healthy_ = false;
         return err;
@@ -252,18 +252,17 @@ esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
     return err;
 }
 
-esp_err_t HubApp::init_espnow()
+esp_err_t HubApp::init_espnow(QueueHandle_t rx_queue)
 {
-    rx_queue_ = hal_rtos_.queue_create(30, sizeof(espnow::AppMessage));
-    if (rx_queue_ == nullptr) {
-        ESP_LOGE(TAG, "Failed to create rx_queue_");
-        return ESP_FAIL;
+    if (rx_queue == nullptr) {
+        ESP_LOGE(TAG, "rx_queue is null");
+        return ESP_ERR_INVALID_ARG;
     }
 
     espnow::EspNowConfig espnow_cfg;
     espnow_cfg.node_id = espnow::ReservedIds::HUB;
     espnow_cfg.node_type = espnow::ReservedTypes::HUB;
-    espnow_cfg.app_rx_queue = rx_queue_;
+    espnow_cfg.app_rx_queue = rx_queue;
     espnow_cfg.wifi_channel = 1;
     espnow_cfg.heartbeat_interval_ms = 0;
 
@@ -298,15 +297,13 @@ esp_err_t HubApp::init_ota_manager()
 void HubApp::run()
 {
     ESP_LOGI(
-        TAG, "Hub running. Boot #%lu. Listening for node messages...", static_cast<unsigned long>(core_.boot_count));
+        TAG,
+        "Hub running. Boot #%lu. Listening for application commands...",
+        static_cast<unsigned long>(core_.boot_count));
 
-    espnow::AppMessage msg;
     AppCommand cmd;
     while (true) {
-        if (rx_queue_ != nullptr && hal_rtos_.queue_receive(rx_queue_, &msg, pdMS_TO_TICKS(50)) == pdTRUE) {
-            handle_message(msg);
-        }
-        if (app_cmd_queue_ != nullptr && hal_rtos_.queue_receive(app_cmd_queue_, &cmd, 0) == pdTRUE) {
+        if (app_cmd_queue_ != nullptr && hal_rtos_.queue_receive(app_cmd_queue_, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
             handle_app_command(cmd);
         }
     }
@@ -341,105 +338,6 @@ void HubApp::handle_app_command(const AppCommand& cmd)
             static_cast<uint8_t>(cmd.espnow_cmd),
             static_cast<uint8_t>(cmd.target_node));
     }
-}
-
-void HubApp::handle_message(const espnow::AppMessage& msg)
-{
-    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
-    auto payload_type = static_cast<farm::PayloadType>(msg.payload_type);
-
-    stats_.messages_received++;
-
-    switch (payload_type) {
-    case farm::PayloadType::WATER_LEVEL_REPORT:
-    {
-        const auto* report = reinterpret_cast<const farm::WaterLevelReport*>(msg.payload);
-
-        stats_.last_wt_level_permille = report->level_permille;
-        stats_.last_wt_distance_cm = report->distance_cm;
-        stats_.last_wt_battery_mv = report->battery_mv;
-
-        if (hal_rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
-            g_system_state.water_level_permille = report->level_permille;
-            g_system_state.water_distance_cm = report->distance_cm;
-            g_system_state.last_water_update_ts = esp_timer_get_time();
-            g_system_state.water_battery_mv = report->battery_mv;
-
-            uint8_t raw_status = static_cast<uint8_t>(report->status);
-            g_system_state.water_fill_state = (raw_status >> 4) & 0x0F;
-            uint8_t status_lower = raw_status & 0x0F;
-            g_system_state.water_sensor_status =
-                static_cast<farm::SensorStatus>((status_lower == 0x0F) ? 0xFF : status_lower);
-
-            // Assuming this is the only node right now, or we just track overall peers
-            g_system_state.espnow_last_rssi = msg.rssi;
-
-            // Simple moving average for RSSI (or just set it for now)
-            if (g_system_state.espnow_avg_rssi == 0) {
-                g_system_state.espnow_avg_rssi = msg.rssi;
-            }
-            else {
-                g_system_state.espnow_avg_rssi = (g_system_state.espnow_avg_rssi * 3 + msg.rssi) / 4;
-            }
-
-            hal_rtos_.semaphore_give(g_state_mutex);
-        }
-
-        ESP_LOGI(
-            TAG,
-            "[WATER TANK] Level: %u\u2030 | Distance: %.1f cm | Battery: %u mV (%u%%) "
-            "| Float: %s | Backup: %s | RSSI: %d dBm | Time: %llu ms",
-            report->level_permille,
-            report->distance_cm,
-            report->battery_mv,
-            report->battery_percent,
-            report->float_switch_is_full ? "FULL" : "EMPTY",
-            report->backup_mode_active ? "ON" : "OFF",
-            msg.rssi,
-            static_cast<unsigned long long>(report->unix_time));
-
-        // Dispatch pending command if armed
-        dispatch_pending_command(node_id);
-
-        // Temporary SyncTime command for test
-        // if (set_pending_command(
-        //         farm::NodeId::WATER_TANK, static_cast<espnow::CommandType>(farm::CommandType::SYNC_TIME))) {
-        //     ESP_LOGW(
-        //         TAG,
-        //         "SyncTime command armed for WATER_TANK. "
-        //         "Will be dispatched on its next message.");
-        // }
-
-        // ACK the message if required
-        if (msg.requires_ack) {
-            espnow_.confirm_reception(msg.sender_id, msg.sequence_number, espnow::AckStatus::OK);
-        }
-        break;
-    }
-    case farm::PayloadType::OTA_STATUS_REPORT:
-    {
-        const auto* report = reinterpret_cast<const farm::OtaStatusReport*>(msg.payload);
-        ESP_LOGI(
-            TAG,
-            "[OTA STATUS REPORT] Node: 0x%02X | Result: %u | Error: 0x%02X | FW Version: %u.%u.%u",
-            msg.sender_id,
-            static_cast<uint8_t>(report->result),
-            static_cast<uint8_t>(report->error_code),
-            report->fw_major,
-            report->fw_minor,
-            report->fw_patch);
-
-        if (msg.requires_ack) {
-            espnow_.confirm_reception(msg.sender_id, msg.sequence_number, espnow::AckStatus::OK);
-        }
-        break;
-    }
-    default:
-        ESP_LOGW(TAG, "Unknown payload 0x%02X from node 0x%02X", msg.payload_type, msg.sender_id);
-        break;
-    }
-
-    hub_storage_.save_app_data(stats_);
 }
 
 void HubApp::dispatch_pending_command(farm::NodeId node_id)

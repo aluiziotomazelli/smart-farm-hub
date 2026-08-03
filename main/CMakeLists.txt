@@ -5,6 +5,9 @@ idf_component_register(
         "src/display_manager.cpp"
         "src/hub_app.cpp"
         "src/hub_nvs.cpp"
+        "src/message_dispatcher.cpp"
+        "src/handlers/water_tank_handler.cpp"
+        "src/handlers/ota_status_handler.cpp"
         "src/ui_controller.cpp"
         "src/ui_input_manager.cpp"
     INCLUDE_DIRS

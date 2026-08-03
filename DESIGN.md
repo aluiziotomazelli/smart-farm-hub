@@ -25,17 +25,24 @@ flowchart TD
     end
 
     subgraph UI & Display Subsystem
-        UiInputs[UiInputManager Task]
-        DisplayMgr[DisplayManager Task]
+        UiInputs[UiInputManager Task : P4]
+        DisplayMgr[DisplayManager Task : P2]
         UIController[UIController]
         SSD1306[HalDisplaySsd1306]
     end
 
+    subgraph ESP-NOW & Dispatcher Subsystem
+        EspNowMgr[EspNowManager Driver : P5]
+        RxQueue[rx_queue_ : Depth 30]
+        Dispatcher[MessageDispatcher Task : P4]
+        TankH[WaterTankHandler]
+        OtaH[OtaStatusHandler]
+    end
+
     subgraph Hub Core Application
-        HubApp[HubApp Core Loop]
+        HubApp[HubApp Task / Loop : P1]
         SysState[SystemState / g_state_mutex]
         WiFiMgr[WiFiManager]
-        EspNowMgr[EspNowManager]
         TimeMgr[TimeManager]
         OtaMgr[OtaManager]
     end
@@ -46,7 +53,15 @@ flowchart TD
     UIController -->|AppCommand| CmdQueue[app_cmd_queue]
     CmdQueue --> HubApp
 
-    HubApp -->|Updates Telemetry & Status| SysState
+    EspNowMgr -->|AppMessage| RxQueue
+    RxQueue --> Dispatcher
+    Dispatcher -->|WATER_LEVEL_REPORT| TankH
+    Dispatcher -->|OTA_STATUS_REPORT| OtaH
+
+    TankH -->|Updates State under Mutex| SysState
+    TankH -->|Confirms ACK / Dispatches Cmd| EspNowMgr
+    OtaH -->|Confirms ACK| EspNowMgr
+
     SysState -->|Safe Snapshot Read| DisplayMgr
     DisplayMgr --> SSD1306
     I2CHAL --> SSD1306
@@ -67,9 +82,29 @@ In compliance with the project's Architectural Guidelines:
 - Processes rotary encoder signals (PCNT HAL + Timer HAL) and push button clicks (GPIO HAL).
 - Posts non-blocking `UiEvent` items (`NAV_NEXT`, `NAV_PREV`, `CONFIRM`, `BACK`) to `ui_event_queue`.
 
-### 2.4 Central Application (`HubApp`)
-- Coordinates Wi-Fi connectivity, ESP-NOW node discovery/telemetry, SNTP time sync, and NVS persistence.
-- Completely hardware-agnostic regarding display hardware; receives user actions strictly as `AppCommand` structures from `app_cmd_queue`.
+### 2.4 Message Dispatcher & Payload Handlers (`MessageDispatcher`)
+- **Autonomous Task**: Runs on a dedicated FreeRTOS task at **Priority 4** (`hub::tasks::DISPATCHER_PRIORITY`), consuming `espnow::AppMessage` objects from `rx_queue_` with zero spin-polling latency (`portMAX_DELAY`).
+- **High-Frequency Telemetry Isolation**: Isolates message dispatching from blocking application operations (e.g. Wi-Fi reconnection, SNTP sync, NVS commits), ensuring `rx_queue_` never overflows even under high-frequency solar telemetry (10–20 Hz).
+- **Modular Handlers (`IPayloadHandler`)**: Payload routing is handled via a type-safe handler registry:
+  - `WaterTankHandler`: Updates tank permille, distance, battery, and RSSI fields in `SystemState`, dispatches armed pending commands (e.g., `SYNC_TIME`), and sends ACKs.
+  - `OtaStatusHandler`: Logs remote node firmware update results and sends ACKs.
+- **Dependency Injection**: Domain handlers receive `SystemState&`, `g_state_mutex`, and service references via constructor injection, encapsulating thread-safe state updates.
+
+### 2.5 Centralized Task Configuration (`hub_tasks.hpp`)
+All FreeRTOS tasks across the Hub ecosystem have their priorities, stack sizes, and core affinity centrally declared in [`main/include/hub_tasks.hpp`](file:///home/german/dev/workspaces/smart-farm/smart-farm-hub/main/include/hub_tasks.hpp):
+
+| Task Name | Priority | Stack Size | Description |
+| :--- | :--- | :--- | :--- |
+| **`espnow_rx` / `espnow_tx`** | 5 (Highest) | 4.0 KB / 3.5 KB | ESP-NOW transport driver packet handling |
+| **`msg_dispatcher`** | 4 | 3.5 KB | Real-time telemetry dispatching & handler routing |
+| **`ui_input`** | 4 | 3.0 KB | Rotary encoder & push button event polling |
+| **`solar_arbitrator`** | 3 | 3.0 KB | `LoadDecisionEngine` real-time power balancing |
+| **`display_mgr`** | 2 | 4.0 KB | OLED status rendering & UI navigation |
+| **`hub_app` / `main`** | 1 (Background) | Main Thread | Application lifecycle, Wi-Fi, SNTP, NVS, & OTA |
+
+### 2.6 Central Application (`HubApp`)
+- Coordinates Wi-Fi connectivity, SNTP time sync, NVS persistence, and OTA updates.
+- Fully hardware-agnostic regarding display and transport implementation; processes user actions via `app_cmd_queue` and delegates message handling entirely to `MessageDispatcher`.
 
 ---
 
@@ -82,7 +117,7 @@ $$\text{Total Load Consumption (W)} \le \text{Instantaneous Solar Generation (W)
 
 ### 3.2 High-Frequency Monitoring & Control Tasks
 - **Solar Generation Monitoring**: High-frequency ESP-NOW telemetry from solar sensor nodes.
-- **Load Control Arbitration**: Real-time evaluation of available power headroom to switch loads (water pump relays / contactors, refrigeration) on or off according to priority rules.
+- **Load Control Arbitration**: `LoadDecisionEngine` evaluates available power headroom in real time to switch loads (water pump relays / contactors, refrigeration) on or off according to priority rules.
 - **Hardware Interlocking**: Physical and software interlocking on water pump contactors (Solar Contactor vs Grid Contactor) to guarantee mutual exclusion.
 
 ---
@@ -90,7 +125,7 @@ $$\text{Total Load Consumption (W)} \le \text{Instantaneous Solar Generation (W)
 ## 4. Time Synchronization Architecture
 
 - **SNTP Synchronization**: `TimeManager` connects to external NTP servers (`pool.ntp.org`) over Wi-Fi, configuring POSIX timezone `<-04>4` (UTC-4).
-- **Edge Node Time Broadcast**: `HubApp` packages system epoch timestamps into `farm::TimeSyncCommand` payloads and broadcasts them over ESP-NOW to sync deep-sleep edge nodes (e.g. Water Tank node).
+- **Edge Node Time Broadcast**: `WaterTankHandler` packages system epoch timestamps into `farm::TimeSyncCommand` payloads and broadcasts them over ESP-NOW to sync deep-sleep edge nodes (e.g. Water Tank node).
 
 ---
 

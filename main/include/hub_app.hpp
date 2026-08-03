@@ -38,10 +38,14 @@ public:
         idf_hals::ISystemHAL& hal_system,
         idf_hals::ISleepHAL& hal_sleep);
 
-    esp_err_t init(const HubAppConfig& config = {}, QueueHandle_t app_cmd_queue = nullptr);
+    esp_err_t init(
+        const HubAppConfig& config = {},
+        QueueHandle_t app_cmd_queue = nullptr,
+        QueueHandle_t rx_queue = nullptr);
     void run();
 
     void handle_app_command(const AppCommand& cmd);
+    HubStats& get_stats() { return stats_; }
 
 protected:
     CoreStorage core_;
@@ -63,7 +67,6 @@ private:
     idf_hals::ISystemHAL& hal_system_;
     idf_hals::ISleepHAL& hal_sleep_;
 
-    QueueHandle_t rx_queue_ = nullptr;
     QueueHandle_t app_cmd_queue_ = nullptr;
     HubAppConfig config_;
 
@@ -71,13 +74,12 @@ private:
     esp_err_t init_core_storage();
     esp_err_t init_wifi();
     esp_err_t connect_wifi_with_retry(uint8_t max_attempts = 2);
-    esp_err_t init_espnow();
+    esp_err_t init_espnow(QueueHandle_t rx_queue);
     esp_err_t init_ota_manager();
 
     void log_boot_summary();
     void check_firmware();
 
-    void handle_message(const espnow::AppMessage& msg);
     void dispatch_pending_command(farm::NodeId node_id);
 
     // Pending command helpers

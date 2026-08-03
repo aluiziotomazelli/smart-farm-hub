@@ -19,8 +19,12 @@
 #include "app_commands.hpp"
 #include "display_manager.hpp"
 #include "espnow_manager.hpp"
+#include "handlers/ota_status_handler.hpp"
+#include "handlers/water_tank_handler.hpp"
 #include "hub_app.hpp"
 #include "hub_nvs.hpp"
+#include "hub_tasks.hpp"
+#include "message_dispatcher.hpp"
 #include "nvs_core.hpp"
 #include "ota_manager.hpp"
 #include "persistence_backend.hpp"
@@ -109,9 +113,10 @@ extern "C" void app_main()
 
     QueueHandle_t ui_event_queue = hal_freertos.queue_create(20, sizeof(UiEvent));
     QueueHandle_t app_cmd_queue = hal_freertos.queue_create(20, sizeof(AppCommand));
+    QueueHandle_t rx_queue = hal_freertos.queue_create(30, sizeof(espnow::AppMessage));
 
-    if (ui_event_queue == nullptr || app_cmd_queue == nullptr) {
-        ESP_LOGE(TAG, "Failed to create UI / App queues");
+    if (ui_event_queue == nullptr || app_cmd_queue == nullptr || rx_queue == nullptr) {
+        ESP_LOGE(TAG, "Failed to create UI / App / RX queues");
     }
 
     static UiInputManager ui_input_mgr(g_encoder, g_encoder_push, g_boot_button, ui_event_queue, hal_freertos);
@@ -141,11 +146,23 @@ extern "C" void app_main()
 
     HubAppConfig config;
 
-    if (app.init(config, app_cmd_queue) != ESP_OK) {
+    if (app.init(config, app_cmd_queue, rx_queue) != ESP_OK) {
         ESP_LOGE(TAG, "Critical hardware/application initialization failure. Rebooting in 10s...");
         hal_freertos.task_delay(pdMS_TO_TICKS(10000));
         esp_restart();
         return;
+    }
+
+    static hub::MessageDispatcher msg_dispatcher(rx_queue, hal_freertos);
+    static hub::WaterTankHandler water_tank_handler(
+        g_system_state, g_state_mutex, app.get_stats(), nvs_hub, espnow, app_time_manager, hal_freertos);
+    static hub::OtaStatusHandler ota_status_handler(espnow);
+
+    msg_dispatcher.register_handler(farm::PayloadType::WATER_LEVEL_REPORT, &water_tank_handler);
+    msg_dispatcher.register_handler(farm::PayloadType::OTA_STATUS_REPORT, &ota_status_handler);
+
+    if (msg_dispatcher.start() != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start MessageDispatcher");
     }
 
     app.run();
