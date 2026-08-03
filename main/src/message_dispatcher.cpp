@@ -46,12 +46,7 @@ esp_err_t MessageDispatcher::start()
 
     running_ = true;
     BaseType_t ret = rtos_.task_create(
-        task_entry,
-        "msg_dispatcher",
-        tasks::DISPATCHER_STACK_SIZE,
-        this,
-        tasks::DISPATCHER_PRIORITY,
-        &task_handle_);
+        task_entry, "msg_dispatcher", tasks::DISPATCHER_STACK_SIZE, this, tasks::DISPATCHER_PRIORITY, &task_handle_);
 
     if (ret != pdPASS) {
         running_ = false;
@@ -60,9 +55,7 @@ esp_err_t MessageDispatcher::start()
     }
 
     ESP_LOGI(
-        TAG,
-        "MessageDispatcher task started (Priority: %lu)",
-        static_cast<unsigned long>(tasks::DISPATCHER_PRIORITY));
+        TAG, "MessageDispatcher task started (Priority: %lu)", static_cast<unsigned long>(tasks::DISPATCHER_PRIORITY));
     return ESP_OK;
 }
 
