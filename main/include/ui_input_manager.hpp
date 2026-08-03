@@ -42,6 +42,7 @@ public:
 
     esp_err_t init();
     esp_err_t start();
+    esp_err_t stop();
     TaskHandle_t get_task_handle() const;
 
 private:
@@ -55,4 +56,5 @@ private:
     idf_hals::IHalFreertos& rtos_;
     UiInputManagerConfig config_;
     TaskHandle_t task_handle_{nullptr};
+    bool running_{true};
 };

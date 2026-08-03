@@ -55,6 +55,7 @@ esp_err_t UiInputManager::init()
 
 esp_err_t UiInputManager::start()
 {
+    running_ = true;
     BaseType_t res = rtos_.task_create(
         task_fn,
         "ui_input_mgr",
@@ -72,6 +73,20 @@ esp_err_t UiInputManager::start()
     return ESP_OK;
 }
 
+esp_err_t UiInputManager::stop()
+{
+    if (!running_) {
+        return ESP_OK;
+    }
+
+    running_ = false;
+    if (task_handle_ != nullptr) {
+        rtos_.task_delete(task_handle_);
+        task_handle_ = nullptr;
+    }
+    return ESP_OK;
+}
+
 TaskHandle_t UiInputManager::get_task_handle() const
 {
     return task_handle_;
@@ -85,7 +100,7 @@ void UiInputManager::task_fn(void* arg)
 
 void UiInputManager::poll_loop()
 {
-    while (true) {
+    while (running_) {
         encoder_.update();
         int32_t steps = encoder_.get_steps();
         if (steps > 0) {
