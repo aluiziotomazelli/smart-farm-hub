@@ -21,6 +21,7 @@
 #include "espnow_manager.hpp"
 #include "handlers/ota_status_handler.hpp"
 #include "handlers/water_tank_handler.hpp"
+#include "handlers/request_sync_time_handler.hpp"
 #include "hub_app.hpp"
 #include "hub_nvs.hpp"
 #include "hub_tasks.hpp"
@@ -153,13 +154,16 @@ extern "C" void app_main()
         return;
     }
 
+    // Create and register payload handlers with the MessageDispatcher'
     static hub::MessageDispatcher msg_dispatcher(rx_queue, hal_freertos);
     static hub::WaterTankHandler water_tank_handler(
         g_system_state, g_state_mutex, app.get_stats(), nvs_hub, espnow, app_time_manager, hal_freertos);
     static hub::OtaStatusHandler ota_status_handler(espnow);
+    static hub::RequestSyncTimeHandler request_sync_time_handler(espnow, app_time_manager);
 
     msg_dispatcher.register_handler(farm::PayloadType::WATER_LEVEL_REPORT, &water_tank_handler);
     msg_dispatcher.register_handler(farm::PayloadType::OTA_STATUS_REPORT, &ota_status_handler);
+    msg_dispatcher.register_handler(farm::PayloadType::REQUEST_SYNC_TIME, &request_sync_time_handler);
 
     if (msg_dispatcher.start() != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start MessageDispatcher");
