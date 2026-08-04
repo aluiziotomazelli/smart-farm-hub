@@ -8,10 +8,10 @@
 
 namespace hub {
 
-class RequestSyncTimeHandler : public IPayloadHandler
+class RequestTimeSyncHandler : public IPayloadHandler
 {
 public:
-    explicit RequestSyncTimeHandler(espnow::IEspNowManager& espnow, time_manager::ITimeManager& time);
+    explicit RequestTimeSyncHandler(espnow::IEspNowManager& espnow, time_manager::ITimeManager& time);
 
     void handle_payload(const espnow::AppMessage& msg) override;
 

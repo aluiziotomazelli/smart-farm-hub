@@ -18,7 +18,7 @@ void OtaStatusHandler::handle_payload(const espnow::AppMessage& msg)
     const auto* report = reinterpret_cast<const farm::OtaStatusReport*>(msg.payload);
     ESP_LOGI(
         TAG,
-        "[OTA STATUS REPORT] Node: 0x%02X | Result: %u | Error: 0x%02X | FW Version: %u.%u.%u",
+        "Node: 0x%02X | Result: %u | Error: 0x%02X | FW Version: %u.%u.%u",
         msg.sender_id,
         static_cast<uint8_t>(report->result),
         static_cast<uint8_t>(report->error_code),
