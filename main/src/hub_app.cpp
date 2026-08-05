@@ -9,6 +9,7 @@
 #include "esp_timer.h"
 
 #include "version_helper.hpp"
+#include "i18n/i18n.hpp"
 
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
@@ -157,7 +158,10 @@ esp_err_t HubApp::init_hub_storage()
     esp_err_t ret = hub_storage_.load_app_data(stats_);
 
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Loaded hub stats from storage");
+        ESP_LOGI(TAG, "Loaded hub stats from storage (language=%u)", stats_.language);
+        if (stats_.language < static_cast<uint8_t>(Language::COUNT)) {
+            I18n::set_language(static_cast<Language>(stats_.language));
+        }
         return ESP_OK;
     }
 
@@ -328,6 +332,11 @@ void HubApp::handle_app_command(const AppCommand& cmd)
             }
             hal_rtos_.task_delay(pdMS_TO_TICKS(1000));
             esp_restart();
+        }
+        else if (static_cast<uint8_t>(cmd.espnow_cmd) == 0xFE) {
+            stats_.language = static_cast<uint8_t>(cmd.param);
+            hub_storage_.save_app_data(stats_, /*force_nvs_commit=*/true);
+            ESP_LOGI(TAG, "Persisted new language preference to NVS: %lu", static_cast<unsigned long>(cmd.param));
         }
     }
     else {

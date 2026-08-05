@@ -13,9 +13,11 @@ enum class ScreenMode
 {
     MAIN_SCREEN,
     WATER_TANK_SCREEN,
+    WATER_TANK_SUBMENU,
     SOLAR_SCREEN,
     LOADS_SCREEN,
     STATS_SCREEN,
+    SETTINGS_SCREEN,
     BOOT_SCREEN
 };
 
@@ -25,8 +27,10 @@ public:
     explicit UIController(IGraphicsContext& gfx, QueueHandle_t app_cmd_queue = nullptr);
     void render_main_screen(const SystemState& state);
     void render_stats_screen(const SystemState& state);
+    void render_settings_screen();
     void render_boot_screen();
     void render_water_tank_screen(const SystemState& state);
+    void render_water_tank_submenu(const SystemState& state);
     void render_solar_screen(const SystemState& state);
     void render_loads_screen(const SystemState& state);
     void render_current_screen(const SystemState& state);
@@ -39,6 +43,9 @@ private:
     IGraphicsContext& gfx_;
     QueueHandle_t app_cmd_queue_;
     ScreenMode current_screen_{ScreenMode::WATER_TANK_SCREEN};
+    int submenu_index_{0};
+    static constexpr int SUBMENU_TOTAL_ITEMS = 4;
 
     const char* battery_state_to_string(farm::BatteryState state);
 };
+

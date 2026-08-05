@@ -26,10 +26,13 @@ struct PendingNodeCommand {
 
 struct HubStats {
     static constexpr uint32_t MAGIC = 0x485542; // "HUB"
-    static constexpr uint8_t VERSION = 1;
+    static constexpr uint8_t VERSION = 2;
 
     uint32_t magic = MAGIC;
     uint8_t version = VERSION;
+
+    // User preferences
+    uint8_t language = 0; // 0: EN_US, 1: PT_BR
 
     // Lifecycle counters
     uint32_t messages_received  = 0;
@@ -54,6 +57,7 @@ struct HubStats {
 
     bool operator==(const HubStats& other) const {
         if (magic != other.magic || version != other.version ||
+            language != other.language ||
             messages_received != other.messages_received ||
             commands_sent != other.commands_sent ||
             last_wt_level_permille != other.last_wt_level_permille ||
