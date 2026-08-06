@@ -46,7 +46,8 @@ void UIController::handle_event(const UiEvent& event)
         else if (current_screen_ == ScreenMode::SETTINGS_SCREEN) {
             current_screen_ = ScreenMode::MAIN_SCREEN;
         }
-        ESP_LOGI(TAG, "Navigated next -> screen %d (submenu idx %d)", static_cast<int>(current_screen_), submenu_index_);
+        ESP_LOGI(
+            TAG, "Navigated next -> screen %d (submenu idx %d)", static_cast<int>(current_screen_), submenu_index_);
         break;
 
     case UiEventType::NAV_PREV:
@@ -71,7 +72,8 @@ void UIController::handle_event(const UiEvent& event)
         else if (current_screen_ == ScreenMode::WATER_TANK_SCREEN) {
             current_screen_ = ScreenMode::MAIN_SCREEN;
         }
-        ESP_LOGI(TAG, "Navigated prev -> screen %d (submenu idx %d)", static_cast<int>(current_screen_), submenu_index_);
+        ESP_LOGI(
+            TAG, "Navigated prev -> screen %d (submenu idx %d)", static_cast<int>(current_screen_), submenu_index_);
         break;
 
     case UiEventType::CONFIRM:
@@ -118,7 +120,8 @@ void UIController::handle_event(const UiEvent& event)
         ESP_LOGI(TAG, "BACK pressed");
         if (current_screen_ == ScreenMode::WATER_TANK_SUBMENU) {
             current_screen_ = ScreenMode::WATER_TANK_SCREEN;
-        } else {
+        }
+        else {
             current_screen_ = ScreenMode::MAIN_SCREEN;
         }
         break;
@@ -246,15 +249,47 @@ void UIController::render_boot_screen()
 void UIController::render_water_tank_screen(const SystemState& state)
 {
     char buf[64];
+    uint8_t x_pos = 0;
+    uint8_t y_pos = 0;
+    uint8_t str_width = 0;
 
-    // --- Header ---
-    gfx_.draw_string(0, 0, state.wifi_connected ? "[W]" : "[_]", 1);
-    gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_WATER_TANK), 1, 24, 128);
+    // --- Header (y=0..7) ---
+    draw_wifi_signal_icon(x_pos, y_pos, state.wifi_connected, state.wifi_rssi);
+    gfx_.draw_string_centered(x_pos, I18n::get(StrId::HEADER_WATER_TANK), 1, 20, 110);
+    draw_battery_icon(112, y_pos, state.water_battery_percent);
 
-    // Separator
-    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+    y_pos = 8;
+    gfx_.draw_hline(0, y_pos, gfx_.get_width(), 1);
 
-    // --- Row 1: Level + Timestamp + Distance ---
+    // --- Primary Level Display (y=12..23, font8x12) ---
+    float level_percent = state.water_level_permille / 10.0f;
+    snprintf(buf, sizeof(buf), "%.1f%%", level_percent);
+    gfx_.draw_string_centered(12, buf, 1, 0, -1, &font8x12);
+
+    // --- Visual Level Bar (y=27..34, 116x8px) ---
+    y_pos = 35;
+    uint8_t bar_height = 8;
+    uint8_t bar_width = 116;
+    uint8_t bar_offset_x = (gfx_.get_width() - bar_width) / 2;
+
+    gfx_.draw_rect(bar_offset_x, y_pos, bar_width, bar_height, 1);
+    int fill_width = (state.water_level_permille * (bar_width - 2)) / 1000;
+    if (fill_width > 0) {
+        if (fill_width > bar_width - 2)
+            fill_width = bar_width - 2;
+        gfx_.fill_rect(bar_offset_x + 1, y_pos + 1, fill_width, bar_height - 2, 1);
+    }
+    // 25%, 50%, 75% tick marks
+    uint8_t quarter_width = bar_width / 4;
+
+    gfx_.draw_vline(bar_offset_x + quarter_width, y_pos, bar_height, 1);
+    gfx_.draw_vline(bar_offset_x + 2 * quarter_width, y_pos, bar_height, 1);
+    gfx_.draw_vline(bar_offset_x + 3 * quarter_width, y_pos, bar_height, 1);
+
+    // --- Footer Line 1 (y=47): Reading Status + Elapsed Time ---
+    x_pos = 0;
+    y_pos = 47;
+
     int64_t now_ms = esp_timer_get_time() / 1000;
     uint32_t elapsed_s = 0;
     if (state.last_water_update_ts > 0 && now_ms >= state.last_water_update_ts) {
@@ -263,67 +298,47 @@ void UIController::render_water_tank_screen(const SystemState& state)
     uint32_t mm = elapsed_s / 60;
     uint32_t ss = elapsed_s % 60;
 
-    float level_percent = state.water_level_permille / 10.0f;
+    const char* status_str = sensor_status_to_string(state.water_sensor_status);
+
     snprintf(
         buf,
         sizeof(buf),
-        "  %.1f  %lu:%02lu   %.1f",
-        level_percent,
+        "%s: %-3s    %02lu:%02lu",
+        I18n::get(StrId::LABEL_READING),
+        status_str,
         static_cast<unsigned long>(mm),
-        static_cast<unsigned long>(ss),
-        state.water_distance_cm);
-    gfx_.draw_string(0, 12, buf, 1);
+        static_cast<unsigned long>(ss));
+    gfx_.draw_string(x_pos, y_pos, buf, 1);
 
-    // --- Row 2: Visual bar ---
-    gfx_.draw_rect(0, 22, 128, 8, 1);
-    int fill_width = (state.water_level_permille * 126) / 1000;
-    for (int i = 0; i < fill_width; ++i) {
-        gfx_.draw_vline(1 + i, 23, 6, 1);
+    // --- Footer Line 2 (y=57): Boia & Sensor Indicators ---
+    x_pos = 0;
+    y_pos = 57;
+
+    snprintf(buf, sizeof(buf), "%s:", I18n::get(StrId::LABEL_FLOAT));
+    str_width = gfx_.get_string_width(buf);
+
+    gfx_.draw_string(x_pos, y_pos, buf, 1);
+
+    bool float_demanding = !state.water_float_switch_full;
+    if (float_demanding) {
+        gfx_.fill_rect(x_pos + str_width + 2, y_pos, 7, 7, 1);
+    }
+    else {
+        gfx_.draw_rect(x_pos + str_width + 2, y_pos, 7, 7, 1);
     }
 
-    // --- Row 3: Water Tank Battery + Sensor Status ---
-    const char* status_str = "UNK";
-    switch (state.water_sensor_status) {
-    case farm::SensorStatus::OK:
-        status_str = "OK";
-        break;
-    case farm::SensorStatus::WARNING_LOW_SIGNAL:
-        status_str = "LS";
-        break;
-    case farm::SensorStatus::ERROR_TIMEOUT:
-        status_str = "TO";
-        break;
-    case farm::SensorStatus::ERROR_OUT_OF_RANGE:
-        status_str = "OOR";
-        break;
-    case farm::SensorStatus::ERROR_UNSTABLE:
-        status_str = "UNS";
-        break;
-    case farm::SensorStatus::ERROR_HARDWARE:
-        status_str = "HDW";
-        break;
-    default:
-        status_str = "UNK";
-        break;
+    x_pos = 64;
+    snprintf(buf, sizeof(buf), "%s:", I18n::get(StrId::LABEL_SENSOR));
+    str_width = gfx_.get_string_width(buf);
+
+    gfx_.draw_string(x_pos, y_pos, buf, 1);
+    bool sensor_ok = !state.water_backup_mode;
+    if (sensor_ok) {
+        gfx_.fill_rect(x_pos + str_width + 2, y_pos, 7, 7, 1);
     }
-    snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_SENSOR), status_str);
-    gfx_.draw_string(0, 34, buf, 1);
-
-    // --- Row 4: Battery % and State ---
-    auto bat_str = battery_state_to_string(state.water_battery_state);
-    snprintf(buf, sizeof(buf), "%s: %u%%  -  %u mV", I18n::get(StrId::LABEL_BATTERY), state.water_battery_percent, state.water_battery_mv);
-    gfx_.draw_string(0, 44, buf, 1);
-
-    // --- Row 5: Float Switch & Backup Mode ---
-    const char* float_str = state.water_float_switch_full ? I18n::get(StrId::LABEL_FLOAT_FULL) : I18n::get(StrId::LABEL_FLOAT_EMPTY);
-    const char* backup_str = state.water_backup_mode ? I18n::get(StrId::LABEL_BACKUP_ON) : I18n::get(StrId::LABEL_BACKUP_OFF);
-    snprintf(
-        buf,
-        sizeof(buf),
-        "Float: %-4s BkUp: %s",
-        float_str,
-        backup_str);
-    gfx_.draw_string(0, 54, buf, 1);
+    else {
+        gfx_.draw_rect(x_pos + str_width + 2, y_pos, 7, 7, 1);
+    }
 }
 
 void UIController::render_water_tank_submenu(const SystemState& state)
@@ -335,8 +350,7 @@ void UIController::render_water_tank_submenu(const SystemState& state)
         I18n::get(StrId::MENU_START_OTA),
         I18n::get(StrId::MENU_PUMP_MODE),
         I18n::get(StrId::MENU_CLEAR_STATS),
-        I18n::get(StrId::MENU_BACK)
-    };
+        I18n::get(StrId::MENU_BACK)};
 
     int y = 14;
     for (int i = 0; i < SUBMENU_TOTAL_ITEMS; ++i) {
@@ -394,6 +408,9 @@ void UIController::render_loads_screen(const SystemState& state)
     gfx_.draw_string(0, 42, buf, 1);
 }
 
+// ===============================================================
+// Helpers
+// ===============================================================
 const char* UIController::battery_state_to_string(farm::BatteryState state)
 {
     switch (state) {
@@ -410,4 +427,80 @@ const char* UIController::battery_state_to_string(farm::BatteryState state)
     }
 }
 
+const char* UIController::sensor_status_to_string(farm::SensorStatus status)
+{
+    switch (status) {
+    case farm::SensorStatus::OK:
+        return "OK";
+    case farm::SensorStatus::WARNING_LOW_SIGNAL:
+        return "LS";
+    case farm::SensorStatus::ERROR_TIMEOUT:
+        return "TO";
+    case farm::SensorStatus::ERROR_OUT_OF_RANGE:
+        return "OOR";
+    case farm::SensorStatus::ERROR_UNSTABLE:
+        return "UNS";
+    case farm::SensorStatus::ERROR_HARDWARE:
+        return "HDW";
+    default:
+        return "UNK";
+    }
+}
+void UIController::draw_wifi_signal_icon(int x, int y, bool connected, int8_t rssi)
+{
+    if (!connected) {
+        gfx_.draw_hline(x, y + 6, 11, 1);
+        gfx_.draw_char(x + 3, y, 'x', 1);
+        return;
+    }
 
+    uint8_t active_bars = 1;
+    if (rssi > -60) {
+        active_bars = 4;
+    }
+    else if (rssi > -70) {
+        active_bars = 3;
+    }
+    else if (rssi > -80) {
+        active_bars = 2;
+    }
+    else {
+        active_bars = 1;
+    }
+
+    if (active_bars >= 1)
+        gfx_.fill_rect(x + 0, y + 5, 2, 2, 1);
+    else
+        gfx_.draw_hline(x + 0, y + 6, 2, 1);
+
+    if (active_bars >= 2)
+        gfx_.fill_rect(x + 3, y + 3, 2, 4, 1);
+    else
+        gfx_.draw_hline(x + 3, y + 6, 2, 1);
+
+    if (active_bars >= 3)
+        gfx_.fill_rect(x + 6, y + 1, 2, 6, 1);
+    else
+        gfx_.draw_hline(x + 6, y + 6, 2, 1);
+
+    if (active_bars >= 4)
+        gfx_.fill_rect(x + 9, y + 0, 2, 7, 1);
+    else
+        gfx_.draw_hline(x + 9, y + 6, 2, 1);
+}
+
+void UIController::draw_battery_icon(int x, int y, uint8_t percent)
+{
+    gfx_.draw_rect(x, y, 14, 7, 1);
+    gfx_.fill_rect(x + 14, y + 2, 2, 3, 1);
+
+    int fill_w = (static_cast<int>(percent) * 10) / 100;
+    if (percent > 0 && fill_w == 0)
+        fill_w = 1;
+    if (fill_w > 10)
+        fill_w = 10;
+
+    if (fill_w > 0) {
+        gfx_.fill_rect(x + 2, y + 2, fill_w, 3, 1);
+    }
+}

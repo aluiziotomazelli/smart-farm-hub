@@ -26,6 +26,14 @@ WaterTankHandler::WaterTankHandler(
     , time_manager_(time_manager)
     , rtos_(rtos)
 {
+    if (stats_.last_wt_level_permille > 0 || stats_.last_wt_battery_mv > 0) {
+        if (state_mutex_ != nullptr && rtos_.semaphore_take(state_mutex_, portMAX_DELAY) == pdTRUE) {
+            state_.water_level_permille = stats_.last_wt_level_permille;
+            state_.water_distance_cm = stats_.last_wt_distance_cm;
+            state_.water_battery_mv = stats_.last_wt_battery_mv;
+            rtos_.semaphore_give(state_mutex_);
+        }
+    }
 }
 
 void WaterTankHandler::handle_payload(const espnow::AppMessage& msg)

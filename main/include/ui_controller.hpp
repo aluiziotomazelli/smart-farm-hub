@@ -47,5 +47,9 @@ private:
     static constexpr int SUBMENU_TOTAL_ITEMS = 4;
 
     const char* battery_state_to_string(farm::BatteryState state);
+    const char* sensor_status_to_string(farm::SensorStatus status);
+
+    void draw_wifi_signal_icon(int x, int y, bool connected, int8_t rssi);
+    void draw_battery_icon(int x, int y, uint8_t percent);
 };
 

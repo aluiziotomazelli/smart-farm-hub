@@ -29,6 +29,8 @@ enum class StrId : uint8_t {
 
     // Labels & Data
     LABEL_SENSOR,      ///< Sensor status label
+    LABEL_READING,     ///< Reading status label
+    LABEL_FLOAT,       ///< Float switch label
     LABEL_BATTERY,     ///< Battery level label
     LABEL_FLOAT_FULL,  ///< Float switch FULL state text
     LABEL_FLOAT_EMPTY, ///< Float switch EMPTY state text

@@ -9,6 +9,8 @@ inline constexpr const char* STRINGS_PT[static_cast<size_t>(StrId::COUNT)] = {
     "ESTATISTICAS",      // HEADER_STATS
     "CONFIG",            // HEADER_SETTINGS
     "Sensor",            // LABEL_SENSOR
+    "Leitura",           // LABEL_READING
+    "Boia",              // LABEL_FLOAT
     "Bat",               // LABEL_BATTERY
     "CHEIO",             // LABEL_FLOAT_FULL
     "VAZIO",             // LABEL_FLOAT_EMPTY

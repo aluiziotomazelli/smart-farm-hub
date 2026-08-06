@@ -79,6 +79,7 @@ private:
 
     void log_boot_summary();
     void check_firmware();
+    void update_wifi_status();
 
     void dispatch_pending_command(farm::NodeId node_id);
 
@@ -86,4 +87,6 @@ private:
     bool set_pending_command(farm::NodeId node_id, espnow::CommandType cmd);
     bool has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd);
     void clear_pending_command(farm::NodeId node_id);
+
+    int64_t last_wifi_poll_ts_{0};
 };

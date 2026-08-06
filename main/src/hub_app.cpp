@@ -241,6 +241,7 @@ esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
         err = wifi_.connect(CONNECT_WIFI_TIMEOUT_MS);
         if (err == ESP_OK) {
             ESP_LOGI(TAG, "WiFi connected successfully");
+            update_wifi_status();
             return ESP_OK;
         }
 
@@ -253,7 +254,23 @@ esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
     }
 
     ESP_LOGE(TAG, "Failed to connect to WiFi after %u attempts: %s", max_attempts, esp_err_to_name(err));
+    update_wifi_status();
     return err;
+}
+
+void HubApp::update_wifi_status()
+{
+    bool is_connected = (wifi_.get_state() == wifi_manager::State::CONNECTED_GOT_IP);
+    int8_t rssi = 0;
+    if (is_connected) {
+        wifi_.get_rssi(rssi);
+    }
+
+    if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
+        g_system_state.wifi_connected = is_connected;
+        g_system_state.wifi_rssi = is_connected ? rssi : 0;
+        hal_rtos_.semaphore_give(g_state_mutex);
+    }
 }
 
 esp_err_t HubApp::init_espnow(QueueHandle_t rx_queue)
@@ -305,10 +322,19 @@ void HubApp::run()
         "Hub running. Boot #%lu. Listening for application commands...",
         static_cast<unsigned long>(core_.boot_count));
 
+    update_wifi_status();
+    last_wifi_poll_ts_ = esp_timer_get_time() / 1000;
+
     AppCommand cmd;
     while (true) {
         if (app_cmd_queue_ != nullptr && hal_rtos_.queue_receive(app_cmd_queue_, &cmd, pdMS_TO_TICKS(100)) == pdTRUE) {
             handle_app_command(cmd);
+        }
+
+        int64_t now_ms = esp_timer_get_time() / 1000;
+        if (now_ms - last_wifi_poll_ts_ >= 5000) {
+            last_wifi_poll_ts_ = now_ms;
+            update_wifi_status();
         }
     }
 }
