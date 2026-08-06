@@ -366,19 +366,22 @@ void HubApp::handle_app_command(const AppCommand& cmd)
         }
     }
     else {
-        set_pending_command(cmd.target_node, cmd.espnow_cmd);
-        ESP_LOGI(
-            TAG,
-            "Armed command 0x%02X for target node 0x%02X",
-            static_cast<uint8_t>(cmd.espnow_cmd),
-            static_cast<uint8_t>(cmd.target_node));
+        if (set_pending_command(cmd.target_node, cmd.espnow_cmd, cmd.requires_ack)) {
+            ESP_LOGI(
+                TAG,
+                "Armed command 0x%02X (requires_ack=%d) for target node 0x%02X",
+                static_cast<uint8_t>(cmd.espnow_cmd),
+                cmd.requires_ack,
+                static_cast<uint8_t>(cmd.target_node));
+        }
     }
 }
 
 void HubApp::dispatch_pending_command(farm::NodeId node_id)
 {
     espnow::CommandType cmd;
-    if (!has_pending_command(node_id, cmd))
+    bool requires_ack = true;
+    if (!has_pending_command(node_id, cmd, requires_ack))
         return;
 
     esp_err_t err;
@@ -397,10 +400,10 @@ void HubApp::dispatch_pending_command(farm::NodeId node_id)
         sync_cmd.sync_source = static_cast<uint8_t>(packet.sync_source);
         sync_cmd.flags = packet.flags;
 
-        err = espnow_.send_command(node_id, cmd, &sync_cmd, sizeof(sync_cmd), false);
+        err = espnow_.send_command(node_id, cmd, &sync_cmd, sizeof(sync_cmd), requires_ack);
     }
     else {
-        err = espnow_.send_command(node_id, cmd, nullptr, 0, false);
+        err = espnow_.send_command(node_id, cmd, nullptr, 0, requires_ack);
     }
 
     if (err == ESP_OK) {
@@ -416,17 +419,24 @@ void HubApp::dispatch_pending_command(farm::NodeId node_id)
     }
 }
 
-bool HubApp::set_pending_command(farm::NodeId node_id, espnow::CommandType cmd)
+bool HubApp::set_pending_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack)
 {
     // Check if already set
     for (auto& entry : stats_.pending_cmds) {
-        if (entry.active && entry.node_id == node_id)
+        if (entry.active && entry.node_id == node_id) {
+            ESP_LOGW(
+                TAG,
+                "Cannot arm command 0x%02X for node 0x%02X: Node already has pending command 0x%02X",
+                static_cast<uint8_t>(cmd),
+                static_cast<uint8_t>(node_id),
+                static_cast<uint8_t>(entry.command));
             return false;
+        }
     }
     // Find empty slot
     for (auto& entry : stats_.pending_cmds) {
         if (!entry.active) {
-            entry = {true, node_id, cmd};
+            entry = {true, node_id, cmd, requires_ack};
             hub_storage_.save_app_data(stats_);
             return true;
         }
@@ -435,11 +445,12 @@ bool HubApp::set_pending_command(farm::NodeId node_id, espnow::CommandType cmd)
     return false;
 }
 
-bool HubApp::has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd)
+bool HubApp::has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd, bool& out_requires_ack)
 {
     for (const auto& entry : stats_.pending_cmds) {
         if (entry.active && entry.node_id == node_id) {
             out_cmd = entry.command;
+            out_requires_ack = entry.requires_ack;
             return true;
         }
     }

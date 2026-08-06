@@ -9,11 +9,13 @@ static const char* TAG = "DisplayManager";
 DisplayManager::DisplayManager(
     QueueHandle_t ui_event_queue,
     QueueHandle_t app_cmd_queue,
+    espnow::IEspNowManager* espnow,
     idf_hals::IHalFreertos& rtos,
     idf_hals::II2cHAL& i2c_hal,
     const DisplayManagerConfig& config)
     : ui_event_queue_(ui_event_queue)
     , app_cmd_queue_(app_cmd_queue)
+    , espnow_(espnow)
     , rtos_(rtos)
     , i2c_hal_(i2c_hal)
     , config_(config)
@@ -92,7 +94,7 @@ void DisplayManager::task_fn(void* arg)
 
 void DisplayManager::display_loop()
 {
-    UIController ui(*gfx_ctx_, app_cmd_queue_);
+    UIController ui(*gfx_ctx_, app_cmd_queue_, espnow_);
 
     while (true) {
         UiEvent event;

@@ -74,6 +74,7 @@ void WaterTankHandler::handle_payload(const espnow::AppMessage& msg)
         msg.rssi,
         static_cast<unsigned long long>(report->unix_time));
 
+    check_and_send_time_sync(node_id, report->unix_time);
     dispatch_pending_command(node_id);
 
     if (msg.requires_ack) {
@@ -83,10 +84,42 @@ void WaterTankHandler::handle_payload(const espnow::AppMessage& msg)
     hub_storage_.save_app_data(stats_);
 }
 
+void WaterTankHandler::check_and_send_time_sync(farm::NodeId node_id, uint64_t node_unix_time_ms)
+{
+    if (!time_manager_.is_synchronized()) {
+        return;
+    }
+
+    constexpr int64_t MAX_DRIFT_MS = 5000;
+
+    uint64_t hub_time_ms = time_manager_.get_timestamp_ms();
+    int64_t drift = static_cast<int64_t>(hub_time_ms) - static_cast<int64_t>(node_unix_time_ms);
+    if (drift < 0) {
+        drift = -drift;
+    }
+
+    // If node clock is un-synced (0) or drifted > MAX_DRIFT_MS, send SYNC_TIME
+    if (node_unix_time_ms == 0 || drift > MAX_DRIFT_MS) {
+        ESP_LOGW(
+            TAG,
+            "Node 0x%02X clock out of sync (node: %llu ms, hub: %llu ms, drift: %lld ms). Sending SYNC_TIME...",
+            static_cast<uint8_t>(node_id),
+            static_cast<unsigned long long>(node_unix_time_ms),
+            static_cast<unsigned long long>(hub_time_ms),
+            static_cast<long long>(drift));
+
+        auto packet = time_manager_.create_time_packet();
+
+        espnow_.send_command(
+            node_id, static_cast<espnow::CommandType>(farm::CommandType::SYNC_TIME), &packet, sizeof(packet), false);
+    }
+}
+
 void WaterTankHandler::dispatch_pending_command(farm::NodeId node_id)
 {
     espnow::CommandType cmd;
-    if (!has_pending_command(node_id, cmd)) {
+    bool requires_ack = true;
+    if (!has_pending_command(node_id, cmd, requires_ack)) {
         return;
     }
 
@@ -106,10 +139,10 @@ void WaterTankHandler::dispatch_pending_command(farm::NodeId node_id)
         sync_cmd.sync_source = static_cast<uint8_t>(packet.sync_source);
         sync_cmd.flags = packet.flags;
 
-        err = espnow_.send_command(node_id, cmd, &sync_cmd, sizeof(sync_cmd), false);
+        err = espnow_.send_command(node_id, cmd, &sync_cmd, sizeof(sync_cmd), requires_ack);
     }
     else {
-        err = espnow_.send_command(node_id, cmd, nullptr, 0, false);
+        err = espnow_.send_command(node_id, cmd, nullptr, 0, requires_ack);
     }
 
     if (err == ESP_OK) {
@@ -125,11 +158,12 @@ void WaterTankHandler::dispatch_pending_command(farm::NodeId node_id)
     }
 }
 
-bool WaterTankHandler::has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd)
+bool WaterTankHandler::has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd, bool& out_requires_ack)
 {
     for (const auto& entry : stats_.pending_cmds) {
         if (entry.active && entry.node_id == node_id) {
             out_cmd = entry.command;
+            out_requires_ack = entry.requires_ack;
             return true;
         }
     }

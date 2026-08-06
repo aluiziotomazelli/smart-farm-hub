@@ -15,9 +15,10 @@ struct PendingNodeCommand {
     bool                  active      = false;
     farm::NodeId          node_id     = farm::NodeId::UNKNOWN;
     espnow::CommandType   command     = espnow::CommandType::START_OTA;
+    bool                  requires_ack = true;
 
     bool operator==(const PendingNodeCommand& other) const {
-        return active == other.active && node_id == other.node_id && command == other.command;
+        return active == other.active && node_id == other.node_id && command == other.command && requires_ack == other.requires_ack;
     }
     bool operator!=(const PendingNodeCommand& other) const {
         return !(*this == other);

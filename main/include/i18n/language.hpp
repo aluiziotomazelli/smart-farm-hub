@@ -40,11 +40,15 @@ enum class StrId : uint8_t
     LABEL_BACKUP_ON,     ///< Backup mode ON state text
     LABEL_BACKUP_OFF,    ///< Backup mode OFF state text
 
-    // Water Tank Submenu
-    MENU_START_OTA,   ///< Start OTA update menu item
-    MENU_PUMP_MODE,   ///< Pump mode configuration menu item
-    MENU_CLEAR_STATS, ///< Clear statistics menu item
-    MENU_BACK,        ///< Back to previous screen menu item
+    // Universal Node Submenu Items
+    MENU_LAST_REPORT,    ///< 1. Last Report menu item
+    MENU_ESPNOW_STATS,   ///< 2. ESP-NOW Stats menu item
+    MENU_REQUEST_REPORT, ///< 3. Request Report menu item
+    MENU_CONFIG,         ///< 4. Config menu item
+    MENU_CLEAR_STATS,    ///< 5. Clear Stats menu item
+    MENU_REBOOT_NODE,    ///< 6. Reboot Node menu item
+    MENU_START_OTA,      ///< 7. Start OTA menu item
+    MENU_BACK,           ///< 8. Back menu item
 
     // Boot
     BOOT_STARTING, ///< Boot splash screen status text

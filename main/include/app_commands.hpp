@@ -10,4 +10,5 @@ struct AppCommand {
     espnow::CommandType espnow_cmd{espnow::CommandType::REBOOT};
     farm::NodeId target_node{farm::NodeId::HUB};
     uint32_t param{0};
+    bool requires_ack{true};
 };

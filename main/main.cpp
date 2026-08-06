@@ -135,7 +135,7 @@ extern "C" void app_main()
         .sda_pin = I2C_SDA_GPIO,
         .scl_pin = I2C_SCL_GPIO,
     };
-    static DisplayManager display_mgr(ui_event_queue, app_cmd_queue, hal_freertos, hal_i2c, display_cfg);
+    static DisplayManager display_mgr(ui_event_queue, app_cmd_queue, &espnow, hal_freertos, hal_i2c, display_cfg);
     if (display_mgr.init() == ESP_OK) {
         display_mgr.start();
     }

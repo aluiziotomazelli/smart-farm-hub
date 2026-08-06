@@ -35,8 +35,9 @@ private:
     time_manager::ITimeManager& time_manager_;
     idf_hals::IHalFreertos& rtos_;
 
+    void check_and_send_time_sync(farm::NodeId node_id, uint64_t node_unix_time_ms);
     void dispatch_pending_command(farm::NodeId node_id);
-    bool has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd);
+    bool has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd, bool& out_requires_ack);
     void clear_pending_command(farm::NodeId node_id);
 };
 

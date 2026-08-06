@@ -16,9 +16,10 @@
 
 static const char* TAG = "UIController";
 
-UIController::UIController(IGraphicsContext& gfx, QueueHandle_t app_cmd_queue)
+UIController::UIController(IGraphicsContext& gfx, QueueHandle_t app_cmd_queue, espnow::IEspNowManager* espnow)
     : gfx_(gfx)
     , app_cmd_queue_(app_cmd_queue)
+    , espnow_(espnow)
 {
 }
 
@@ -26,7 +27,7 @@ void UIController::handle_event(const UiEvent& event)
 {
     switch (event.type) {
     case UiEventType::NAV_NEXT:
-        if (current_screen_ == ScreenMode::WATER_TANK_SUBMENU) {
+        if (current_screen_ == ScreenMode::NODE_SUBMENU) {
             submenu_index_ = (submenu_index_ + 1) % SUBMENU_TOTAL_ITEMS;
         }
         else if (current_screen_ == ScreenMode::MAIN_SCREEN) {
@@ -52,7 +53,7 @@ void UIController::handle_event(const UiEvent& event)
         break;
 
     case UiEventType::NAV_PREV:
-        if (current_screen_ == ScreenMode::WATER_TANK_SUBMENU) {
+        if (current_screen_ == ScreenMode::NODE_SUBMENU) {
             submenu_index_ = (submenu_index_ - 1 + SUBMENU_TOTAL_ITEMS) % SUBMENU_TOTAL_ITEMS;
         }
         else if (current_screen_ == ScreenMode::MAIN_SCREEN) {
@@ -78,30 +79,75 @@ void UIController::handle_event(const UiEvent& event)
         break;
 
     case UiEventType::CONFIRM:
-        ESP_LOGI(TAG, "CONFIRM pressed on screen %d", static_cast<int>(current_screen_));
         if (current_screen_ == ScreenMode::WATER_TANK_SCREEN) {
-            current_screen_ = ScreenMode::WATER_TANK_SUBMENU;
+            active_node_ = farm::NodeId::WATER_TANK;
+            current_screen_ = ScreenMode::NODE_SUBMENU;
             submenu_index_ = 0;
-            ESP_LOGI(TAG, "Entered WATER_TANK_SUBMENU");
+            ESP_LOGI(TAG, "Entered NODE_SUBMENU for WATER_TANK");
         }
-        else if (current_screen_ == ScreenMode::WATER_TANK_SUBMENU) {
-            if (submenu_index_ == 0) { // Start OTA
+        else if (current_screen_ == ScreenMode::SOLAR_SCREEN) {
+            active_node_ = farm::NodeId::SOLAR_SENSOR;
+            current_screen_ = ScreenMode::NODE_SUBMENU;
+            submenu_index_ = 0;
+            ESP_LOGI(TAG, "Entered NODE_SUBMENU for SOLAR_SENSOR");
+        }
+        else if (current_screen_ == ScreenMode::LOADS_SCREEN) {
+            active_node_ = farm::NodeId::PUMP_CONTROL;
+            current_screen_ = ScreenMode::NODE_SUBMENU;
+            submenu_index_ = 0;
+            ESP_LOGI(TAG, "Entered NODE_SUBMENU for PUMP_CONTROL");
+        }
+        else if (current_screen_ == ScreenMode::NODE_SUBMENU) {
+            switch (static_cast<SubmenuItem>(submenu_index_)) {
+            case SubmenuItem::LAST_REPORT:
+                if (active_node_ == farm::NodeId::WATER_TANK) {
+                    current_screen_ = ScreenMode::WATER_TANK_LAST_REPORT_SCREEN;
+                    ESP_LOGI(TAG, "Entered WATER_TANK_LAST_REPORT_SCREEN");
+                }
+                else {
+                    current_screen_ = get_screen_for_node(active_node_);
+                }
+                break;
+            case SubmenuItem::ESPNOW_STATS:
+                current_screen_ = ScreenMode::NODE_STATS_SCREEN;
+                ESP_LOGI(TAG, "Entered NODE_STATS_SCREEN for node %d", static_cast<int>(active_node_));
+                break;
+            case SubmenuItem::START_OTA:
                 if (app_cmd_queue_ != nullptr) {
                     AppCommand cmd;
                     cmd.espnow_cmd = espnow::CommandType::START_OTA;
-                    cmd.target_node = farm::NodeId::WATER_TANK;
+                    cmd.target_node = active_node_;
                     cmd.param = 0;
+                    cmd.requires_ack = true;
                     xQueueSend(app_cmd_queue_, &cmd, 0);
-                    ESP_LOGI(TAG, "Queued START_OTA for WATER_TANK");
+                    ESP_LOGI(TAG, "Queued START_OTA for node %d", static_cast<int>(active_node_));
                 }
-                current_screen_ = ScreenMode::WATER_TANK_SCREEN;
+                current_screen_ = get_screen_for_node(active_node_);
+                break;
+            case SubmenuItem::REBOOT_NODE:
+                if (app_cmd_queue_ != nullptr) {
+                    AppCommand cmd;
+                    cmd.espnow_cmd = static_cast<espnow::CommandType>(0xFE);
+                    cmd.target_node = active_node_;
+                    cmd.param = 0;
+                    cmd.requires_ack = true;
+                    xQueueSend(app_cmd_queue_, &cmd, 0);
+                    ESP_LOGI(TAG, "Queued REBOOT for node %d", static_cast<int>(active_node_));
+                }
+                current_screen_ = get_screen_for_node(active_node_);
+                break;
+            case SubmenuItem::BACK:
+                current_screen_ = get_screen_for_node(active_node_);
+                break;
+            default:
+                ESP_LOGI(TAG, "Executed submenu item %d for node %d", submenu_index_, static_cast<int>(active_node_));
+                break;
             }
-            else if (submenu_index_ == 3) { // Back
-                current_screen_ = ScreenMode::WATER_TANK_SCREEN;
-            }
-            else {
-                ESP_LOGI(TAG, "Executed dummy menu item %d", submenu_index_);
-            }
+        }
+        else if (
+            current_screen_ == ScreenMode::NODE_STATS_SCREEN ||
+            current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN) {
+            current_screen_ = ScreenMode::NODE_SUBMENU;
         }
         else if (current_screen_ == ScreenMode::SETTINGS_SCREEN) {
             Language new_lang = (I18n::get_language() == Language::EN_US) ? Language::PT_BR : Language::EN_US;
@@ -119,8 +165,13 @@ void UIController::handle_event(const UiEvent& event)
 
     case UiEventType::BACK:
         ESP_LOGI(TAG, "BACK pressed");
-        if (current_screen_ == ScreenMode::WATER_TANK_SUBMENU) {
-            current_screen_ = ScreenMode::WATER_TANK_SCREEN;
+        if (current_screen_ == ScreenMode::NODE_SUBMENU) {
+            current_screen_ = get_screen_for_node(active_node_);
+        }
+        else if (
+            current_screen_ == ScreenMode::NODE_STATS_SCREEN ||
+            current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN) {
+            current_screen_ = ScreenMode::NODE_SUBMENU;
         }
         else {
             current_screen_ = ScreenMode::MAIN_SCREEN;
@@ -138,6 +189,11 @@ void UIController::handle_event(const UiEvent& event)
     }
 }
 
+// ===============================================================
+// Render Methods
+// ===============================================================
+static void format_compact_num(char* buf, size_t buf_size, uint32_t val);
+
 void UIController::render_current_screen(const SystemState& state)
 {
     switch (current_screen_) {
@@ -147,8 +203,14 @@ void UIController::render_current_screen(const SystemState& state)
     case ScreenMode::WATER_TANK_SCREEN:
         render_water_tank_screen(state);
         break;
-    case ScreenMode::WATER_TANK_SUBMENU:
-        render_water_tank_submenu(state);
+    case ScreenMode::NODE_SUBMENU:
+        render_node_submenu(state);
+        break;
+    case ScreenMode::NODE_STATS_SCREEN:
+        render_node_stats_screen(state);
+        break;
+    case ScreenMode::WATER_TANK_LAST_REPORT_SCREEN:
+        render_water_tank_last_report_screen(state);
         break;
     case ScreenMode::SOLAR_SCREEN:
         render_solar_screen(state);
@@ -219,34 +281,6 @@ void UIController::render_main_screen(const SystemState& state)
     gfx_.draw_string(0, 54, "Stats: via node screens", 1);
 }
 
-void UIController::render_stats_screen(const SystemState& state)
-{
-    gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_STATS), 1);
-    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
-    // Placeholder for actual stats
-}
-
-void UIController::render_settings_screen()
-{
-    gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_SETTINGS), 1);
-    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
-
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%s:", I18n::get(StrId::SETTINGS_LANGUAGE));
-    gfx_.draw_string(4, 16, buf, 1);
-
-    bool is_en = (I18n::get_language() == Language::EN_US);
-    bool is_pt = (I18n::get_language() == Language::PT_BR);
-
-    gfx_.draw_string(8, 30, I18n::get(StrId::SETTINGS_LANG_EN), 1, nullptr, is_en);
-    gfx_.draw_string(8, 44, I18n::get(StrId::SETTINGS_LANG_PT), 1, nullptr, is_pt);
-}
-
-void UIController::render_boot_screen()
-{
-    gfx_.draw_string_centered(26, I18n::get(StrId::BOOT_STARTING), 1, 0, -1, &font8x12);
-}
-
 void UIController::render_water_tank_screen(const SystemState& state)
 {
     char buf[64];
@@ -264,10 +298,8 @@ void UIController::render_water_tank_screen(const SystemState& state)
 
     if (state.water_backup_mode) {
         // --- Backup Mode Warning Display (y=12..35) ---
-        // Header warning: "SENSOR FAIL"
         gfx_.draw_string_centered(12, I18n::get(StrId::LABEL_SENSOR_FAILED), 1, 0, -1, &font8x12);
 
-        // State of float switch: "BOIA: CHEIA" / "BOIA: VAZIA"
         const char* float_state_str =
             state.water_float_switch_full ? I18n::get(StrId::LABEL_FLOAT_FULL) : I18n::get(StrId::LABEL_FLOAT_EMPTY);
         snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_FLOAT), float_state_str);
@@ -288,12 +320,8 @@ void UIController::render_water_tank_screen(const SystemState& state)
     else {
         // --- Normal Primary Level Display (y=12..33, font14x22_num) ---
         y_pos = 12;
-        // Option A: Percentage with 1 decimal (e.g. 84.5%)
         float level_percent = state.water_level_permille / 10.0f;
         snprintf(buf, sizeof(buf), "%.1f%%", level_percent);
-
-        // Option B: Permille integer (e.g. 845‰)
-        // snprintf(buf, sizeof(buf), "%u\x7F", state.water_level_permille);
         gfx_.draw_string_centered(y_pos, buf, 1, 0, -1, &font14x22_num);
 
         // --- Visual Level Bar (y=37, 124x6px) ---
@@ -309,7 +337,6 @@ void UIController::render_water_tank_screen(const SystemState& state)
                 fill_width = bar_width - 2;
             gfx_.fill_rect(bar_offset_x + 1, y_pos + 1, fill_width, bar_height - 2, 1);
         }
-        // 25%, 50%, 75% tick marks
         uint8_t quarter_width = bar_width / 4;
         gfx_.draw_vline(bar_offset_x + quarter_width, y_pos, bar_height, 1);
         gfx_.draw_vline(bar_offset_x + 2 * quarter_width, y_pos, bar_height, 1);
@@ -330,11 +357,9 @@ void UIController::render_water_tank_screen(const SystemState& state)
 
     const char* status_str = sensor_status_to_string(state.water_sensor_status);
 
-    // Left: Reading status (e.g. "Leitura: OK")
     snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_READING), status_str);
     gfx_.draw_string(x_pos, y_pos, buf, 1);
 
-    // Right: Elapsed time (e.g. "01:24") right-aligned to screen edge
     char time_buf[16];
     snprintf(time_buf, sizeof(time_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
     int time_w = gfx_.get_string_width(time_buf);
@@ -357,7 +382,6 @@ void UIController::render_water_tank_screen(const SystemState& state)
         gfx_.draw_rect(x_pos + str_width + 2, y_pos, 7, 7, 1);
     }
 
-    // Right-aligned Sensor indicator: indicator square ends at x=128 (x=121..127)
     snprintf(buf, sizeof(buf), "%s:", I18n::get(StrId::LABEL_SENSOR));
     str_width = gfx_.get_string_width(buf);
 
@@ -374,23 +398,176 @@ void UIController::render_water_tank_screen(const SystemState& state)
     }
 }
 
-void UIController::render_water_tank_submenu(const SystemState& state)
+void UIController::render_node_submenu(const SystemState& state)
 {
-    gfx_.draw_string_centered(0, "TANK MENU", 1);
+    const char* node_name = get_node_name(active_node_);
+    char title_buf[32];
+    snprintf(title_buf, sizeof(title_buf), "%s MENU", node_name);
+    gfx_.draw_string_centered(0, title_buf, 1);
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
 
     const char* menu_items[SUBMENU_TOTAL_ITEMS] = {
-        I18n::get(StrId::MENU_START_OTA),
-        I18n::get(StrId::MENU_PUMP_MODE),
+        I18n::get(StrId::MENU_LAST_REPORT),
+        I18n::get(StrId::MENU_ESPNOW_STATS),
+        I18n::get(StrId::MENU_REQUEST_REPORT),
+        I18n::get(StrId::MENU_CONFIG),
         I18n::get(StrId::MENU_CLEAR_STATS),
+        I18n::get(StrId::MENU_REBOOT_NODE),
+        I18n::get(StrId::MENU_START_OTA),
         I18n::get(StrId::MENU_BACK)};
 
+    static constexpr int VISIBLE_ITEMS = 4;
+    int top_index = submenu_index_ - (VISIBLE_ITEMS - 1);
+    if (top_index < 0)
+        top_index = 0;
+
     int y = 14;
-    for (int i = 0; i < SUBMENU_TOTAL_ITEMS; ++i) {
-        bool is_selected = (i == submenu_index_);
-        gfx_.draw_string(4, y, menu_items[i], 1, nullptr, is_selected);
+    for (int i = 0; i < VISIBLE_ITEMS && (top_index + i) < SUBMENU_TOTAL_ITEMS; ++i) {
+        int item_idx = top_index + i;
+        bool is_selected = (item_idx == submenu_index_);
+        gfx_.draw_string(4, y, menu_items[item_idx], 1, nullptr, is_selected);
         y += 12;
     }
+
+    if (top_index > 0) {
+        gfx_.draw_string(120, 14, "^", 1);
+    }
+    if (top_index + VISIBLE_ITEMS < SUBMENU_TOTAL_ITEMS) {
+        gfx_.draw_string(120, 50, "v", 1);
+    }
+}
+
+void UIController::render_node_stats_screen(const SystemState& state)
+{
+    const char* node_name = get_node_name(active_node_);
+
+    char left_buf[32];
+    char right_buf[32];
+    char num_buf[16];
+
+    // --- Header ---
+    snprintf(left_buf, sizeof(left_buf), "%s STATS", node_name);
+    gfx_.draw_string_centered(0, left_buf, 1);
+    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+
+    espnow::PeerStatistics stats{};
+    if (espnow_ != nullptr) {
+        espnow_->get_peer_stats(static_cast<espnow::NodeId>(active_node_), stats);
+    }
+
+    uint8_t collumn_a_x_pos = 0;
+    uint8_t collumn_b_x_pos = 70;
+
+    // --- Line 1 (y=12): RSSI ---
+    uint8_t y_pos = 12;
+    snprintf(left_buf, sizeof(left_buf), "RSSI: %d", stats.rssi_last);
+    snprintf(right_buf, sizeof(right_buf), "Avg: %d", stats.rssi_avg);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 2 (y=22): Packets Rx & Tx ---
+    y_pos = 22;
+    format_compact_num(num_buf, sizeof(num_buf), stats.packets_rx);
+    snprintf(left_buf, sizeof(left_buf), "Rx: %s", num_buf);
+    format_compact_num(num_buf, sizeof(num_buf), stats.packets_sent);
+    snprintf(right_buf, sizeof(right_buf), "Tx: %s", num_buf);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 3 (y=32): Lost & Retry ---
+    y_pos = 32;
+    format_compact_num(num_buf, sizeof(num_buf), stats.packets_lost);
+    snprintf(left_buf, sizeof(left_buf), "Lost: %s", num_buf);
+    format_compact_num(num_buf, sizeof(num_buf), stats.retries);
+    snprintf(right_buf, sizeof(right_buf), "Retry: %s", num_buf);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 4 (y=42): RTT & Avg RTT ---
+    y_pos = 42;
+    if (stats.rtt_last_us < 1000) {
+        snprintf(left_buf, sizeof(left_buf), "RTT: %luus", static_cast<unsigned long>(stats.rtt_last_us));
+    }
+    else {
+        snprintf(left_buf, sizeof(left_buf), "RTT: %.1fms", stats.rtt_last_us / 1000.0f);
+    }
+
+    if (stats.rtt_avg_us < 1000) {
+        snprintf(right_buf, sizeof(right_buf), "Avg: %luus", static_cast<unsigned long>(stats.rtt_avg_us));
+    }
+    else {
+        snprintf(right_buf, sizeof(right_buf), "Avg: %.1fms", stats.rtt_avg_us / 1000.0f);
+    }
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 5 (y=52): Driver Fail & Errors ---
+    y_pos = 52;
+    format_compact_num(num_buf, sizeof(num_buf), stats.delivery_failures);
+    snprintf(left_buf, sizeof(left_buf), "Fail: %s", num_buf);
+    format_compact_num(num_buf, sizeof(num_buf), stats.driver_errors);
+    snprintf(right_buf, sizeof(right_buf), "Err: %s", num_buf);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+}
+
+void UIController::render_water_tank_last_report_screen(const SystemState& state)
+{
+    char left_buf[32];
+    char right_buf[32];
+
+    // --- Header (y=0..7) ---
+    gfx_.draw_string_centered(0, "[WT] LAST REPORT", 1);
+    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+
+    uint8_t collumn_a_x_pos = 0;
+    uint8_t collumn_b_x_pos = 64;
+
+    // --- Line 1 (y=11): Permille & Distance ---
+    uint8_t y_pos = 11;
+    snprintf(left_buf, sizeof(left_buf), "Lv: %u", state.water_level_permille);
+    snprintf(right_buf, sizeof(right_buf), "D: %.1fcm", state.water_distance_cm);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 2 (y=21): Raw Battery Voltage (mV) & Percentage ---
+    y_pos = 21;
+    snprintf(left_buf, sizeof(left_buf), "B: %umV", state.water_battery_mv);
+    snprintf(right_buf, sizeof(right_buf), "(%u%%)", state.water_battery_percent);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 3 (y=31): Sensor Status & Operating Mode ---
+    y_pos = 31;
+    snprintf(left_buf, sizeof(left_buf), "Sens: %s", sensor_status_to_string(state.water_sensor_status));
+    const char* mode_str = state.water_backup_mode ? "BACKUP" : "NORM";
+    snprintf(right_buf, sizeof(right_buf), "Mode: %s", mode_str);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 4 (y=41): Float switch (Left) + Elapsed Age MM:SS (Right-aligned) ---
+    y_pos = 41;
+    const char* float_str =
+        state.water_float_switch_full ? I18n::get(StrId::LABEL_FLOAT_FULL) : I18n::get(StrId::LABEL_FLOAT_EMPTY);
+    snprintf(left_buf, sizeof(left_buf), "%s: %s", I18n::get(StrId::LABEL_FLOAT), float_str);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+
+    int64_t now_ms = esp_timer_get_time() / 1000;
+    uint32_t elapsed_s = 0;
+    if (state.last_water_update_ts > 0 && now_ms >= state.last_water_update_ts) {
+        elapsed_s = static_cast<uint32_t>((now_ms - state.last_water_update_ts) / 1000);
+    }
+    uint32_t mm = elapsed_s / 60;
+    uint32_t ss = elapsed_s % 60;
+    snprintf(
+        right_buf, sizeof(right_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    int age_w = gfx_.get_string_width(right_buf);
+    gfx_.draw_string(gfx_.get_width() - age_w, y_pos, right_buf, 1);
+
+    // --- Line 5 (y=51): Raw Unix Timestamp ---
+    y_pos = 51;
+    snprintf(left_buf, sizeof(left_buf), "T: %llu", static_cast<unsigned long long>(state.water_node_unix_time / 1000));
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 }
 
 void UIController::render_solar_screen(const SystemState& state)
@@ -441,9 +618,78 @@ void UIController::render_loads_screen(const SystemState& state)
     gfx_.draw_string(0, 42, buf, 1);
 }
 
+void UIController::render_stats_screen(const SystemState& state)
+{
+    gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_STATS), 1);
+    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+}
+
+void UIController::render_settings_screen()
+{
+    gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_SETTINGS), 1);
+    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%s:", I18n::get(StrId::SETTINGS_LANGUAGE));
+    gfx_.draw_string(4, 16, buf, 1);
+
+    bool is_en = (I18n::get_language() == Language::EN_US);
+    bool is_pt = (I18n::get_language() == Language::PT_BR);
+
+    gfx_.draw_string(8, 30, I18n::get(StrId::SETTINGS_LANG_EN), 1, nullptr, is_en);
+    gfx_.draw_string(8, 44, I18n::get(StrId::SETTINGS_LANG_PT), 1, nullptr, is_pt);
+}
+
+void UIController::render_boot_screen()
+{
+    gfx_.draw_string_centered(26, I18n::get(StrId::BOOT_STARTING), 1, 0, -1, &font8x12);
+}
+
 // ===============================================================
-// Helpers
+// Private Helpers
 // ===============================================================
+
+static void format_compact_num(char* buf, size_t buf_size, uint32_t val)
+{
+    if (val >= 1000000) {
+        snprintf(buf, buf_size, "%.2fM", val / 1000000.0f);
+    }
+    else if (val >= 10000) {
+        snprintf(buf, buf_size, "%.1fk", val / 1000.0f);
+    }
+    else {
+        snprintf(buf, buf_size, "%lu", static_cast<unsigned long>(val));
+    }
+}
+
+const char* UIController::get_node_name(farm::NodeId node) const
+{
+    switch (node) {
+    case farm::NodeId::WATER_TANK:
+        return I18n::get(StrId::HEADER_WATER_TANK);
+    case farm::NodeId::SOLAR_SENSOR:
+        return I18n::get(StrId::HEADER_SOLAR);
+    case farm::NodeId::PUMP_CONTROL:
+        return I18n::get(StrId::HEADER_LOADS);
+    default:
+        return "NODE";
+    }
+}
+
+ScreenMode UIController::get_screen_for_node(farm::NodeId node) const
+{
+    switch (node) {
+    case farm::NodeId::WATER_TANK:
+        return ScreenMode::WATER_TANK_SCREEN;
+    case farm::NodeId::SOLAR_SENSOR:
+        return ScreenMode::SOLAR_SCREEN;
+    case farm::NodeId::PUMP_CONTROL:
+        return ScreenMode::LOADS_SCREEN;
+    default:
+        return ScreenMode::WATER_TANK_SCREEN;
+    }
+}
+
 const char* UIController::battery_state_to_string(farm::BatteryState state)
 {
     switch (state) {
@@ -479,6 +725,7 @@ const char* UIController::sensor_status_to_string(farm::SensorStatus status)
         return "UNK";
     }
 }
+
 void UIController::draw_wifi_signal_icon(int x, int y, bool connected, int8_t rssi)
 {
     if (!connected) {

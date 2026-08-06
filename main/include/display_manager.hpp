@@ -25,12 +25,17 @@ struct DisplayManagerConfig
     UBaseType_t task_priority = 2;
 };
 
+namespace espnow {
+class IEspNowManager;
+}
+
 class DisplayManager : public IDisplayManager
 {
 public:
     DisplayManager(
         QueueHandle_t ui_event_queue,
         QueueHandle_t app_cmd_queue,
+        espnow::IEspNowManager* espnow,
         idf_hals::IHalFreertos& rtos,
         idf_hals::II2cHAL& i2c_hal,
         const DisplayManagerConfig& config = {});
@@ -47,6 +52,7 @@ private:
 
     QueueHandle_t ui_event_queue_;
     QueueHandle_t app_cmd_queue_;
+    espnow::IEspNowManager* espnow_{nullptr};
     idf_hals::IHalFreertos& rtos_;
     idf_hals::II2cHAL& i2c_hal_;
     DisplayManagerConfig config_;

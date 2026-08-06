@@ -84,8 +84,8 @@ private:
     void dispatch_pending_command(farm::NodeId node_id);
 
     // Pending command helpers
-    bool set_pending_command(farm::NodeId node_id, espnow::CommandType cmd);
-    bool has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd);
+    bool set_pending_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack = true);
+    bool has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd, bool& out_requires_ack);
     void clear_pending_command(farm::NodeId node_id);
 
     int64_t last_wifi_poll_ts_{0};
