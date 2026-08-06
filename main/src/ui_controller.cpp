@@ -262,35 +262,59 @@ void UIController::render_water_tank_screen(const SystemState& state)
     y_pos = 8;
     gfx_.draw_hline(0, y_pos, gfx_.get_width(), 1);
 
-    y_pos = 12;
-    // --- Primary Level Display (y=12..33, font14x22_num) ---
-    // Option A: Percentage with 1 decimal (e.g. 84.5%)
-    float level_percent = state.water_level_permille / 10.0f;
-    snprintf(buf, sizeof(buf), "%.1f", level_percent);
+    if (state.water_backup_mode) {
+        // --- Backup Mode Warning Display (y=12..35) ---
+        // Header warning: "SENSOR FAIL"
+        gfx_.draw_string_centered(12, I18n::get(StrId::LABEL_SENSOR_FAILED), 1, 0, -1, &font8x12);
 
-    // Option B: Permille integer (e.g. 845‰)
-    // snprintf(buf, sizeof(buf), "%u\x7F", state.water_level_permille);
-    gfx_.draw_string_centered(y_pos, buf, 1, 0, -1, &font14x22_num);
+        // State of float switch: "BOIA: CHEIA" / "BOIA: VAZIA"
+        const char* float_state_str =
+            state.water_float_switch_full ? I18n::get(StrId::LABEL_FLOAT_FULL) : I18n::get(StrId::LABEL_FLOAT_EMPTY);
+        snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_FLOAT), float_state_str);
+        gfx_.draw_string_centered(25, buf, 1, 0, -1, &font8x12);
 
-    // --- Visual Level Bar (y=27..34, 116x8px) ---
-    y_pos = 37;
-    uint8_t bar_height = 6;
-    uint8_t bar_width = 124;
-    uint8_t bar_offset_x = (gfx_.get_width() - bar_width) / 2;
+        // --- Visual Level Bar Frame (Empty in backup mode) ---
+        y_pos = 37;
+        uint8_t bar_height = 6;
+        uint8_t bar_width = 124;
+        uint8_t bar_offset_x = (gfx_.get_width() - bar_width) / 2;
 
-    gfx_.draw_rect(bar_offset_x, y_pos, bar_width, bar_height, 1);
-    int fill_width = (state.water_level_permille * (bar_width - 2)) / 1000;
-    if (fill_width > 0) {
-        if (fill_width > bar_width - 2)
-            fill_width = bar_width - 2;
-        gfx_.fill_rect(bar_offset_x + 1, y_pos + 1, fill_width, bar_height - 2, 1);
+        gfx_.draw_rect(bar_offset_x, y_pos, bar_width, bar_height, 1);
+        uint8_t quarter_width = bar_width / 4;
+        gfx_.draw_vline(bar_offset_x + quarter_width, y_pos, bar_height, 1);
+        gfx_.draw_vline(bar_offset_x + 2 * quarter_width, y_pos, bar_height, 1);
+        gfx_.draw_vline(bar_offset_x + 3 * quarter_width, y_pos, bar_height, 1);
     }
-    // 25%, 50%, 75% tick marks
-    uint8_t quarter_width = bar_width / 4;
+    else {
+        // --- Normal Primary Level Display (y=12..33, font14x22_num) ---
+        y_pos = 12;
+        // Option A: Percentage with 1 decimal (e.g. 84.5%)
+        float level_percent = state.water_level_permille / 10.0f;
+        snprintf(buf, sizeof(buf), "%.1f%%", level_percent);
 
-    gfx_.draw_vline(bar_offset_x + quarter_width, y_pos, bar_height, 1);
-    gfx_.draw_vline(bar_offset_x + 2 * quarter_width, y_pos, bar_height, 1);
-    gfx_.draw_vline(bar_offset_x + 3 * quarter_width, y_pos, bar_height, 1);
+        // Option B: Permille integer (e.g. 845‰)
+        // snprintf(buf, sizeof(buf), "%u\x7F", state.water_level_permille);
+        gfx_.draw_string_centered(y_pos, buf, 1, 0, -1, &font14x22_num);
+
+        // --- Visual Level Bar (y=37, 124x6px) ---
+        y_pos = 37;
+        uint8_t bar_height = 6;
+        uint8_t bar_width = 124;
+        uint8_t bar_offset_x = (gfx_.get_width() - bar_width) / 2;
+
+        gfx_.draw_rect(bar_offset_x, y_pos, bar_width, bar_height, 1);
+        int fill_width = (state.water_level_permille * (bar_width - 2)) / 1000;
+        if (fill_width > 0) {
+            if (fill_width > bar_width - 2)
+                fill_width = bar_width - 2;
+            gfx_.fill_rect(bar_offset_x + 1, y_pos + 1, fill_width, bar_height - 2, 1);
+        }
+        // 25%, 50%, 75% tick marks
+        uint8_t quarter_width = bar_width / 4;
+        gfx_.draw_vline(bar_offset_x + quarter_width, y_pos, bar_height, 1);
+        gfx_.draw_vline(bar_offset_x + 2 * quarter_width, y_pos, bar_height, 1);
+        gfx_.draw_vline(bar_offset_x + 3 * quarter_width, y_pos, bar_height, 1);
+    }
 
     // --- Footer Line 1 (y=47): Reading Status (Left) + Elapsed Time (Right) ---
     x_pos = 0;
