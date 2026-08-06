@@ -6,6 +6,7 @@
 #include "esp_timer.h"
 
 #include "fonts/font8x12.hpp"
+#include "fonts/font14x22_num.hpp"
 #include "i_graphics_context.hpp"
 #include "i18n/i18n.hpp"
 #include "system_state.hpp"
@@ -255,21 +256,26 @@ void UIController::render_water_tank_screen(const SystemState& state)
 
     // --- Header (y=0..7) ---
     draw_wifi_signal_icon(x_pos, y_pos, state.wifi_connected, state.wifi_rssi);
-    gfx_.draw_string_centered(x_pos, I18n::get(StrId::HEADER_WATER_TANK), 1, 20, 110);
+    gfx_.draw_string_centered(x_pos, I18n::get(StrId::HEADER_WATER_TANK), 1);
     draw_battery_icon(112, y_pos, state.water_battery_percent);
 
     y_pos = 8;
     gfx_.draw_hline(0, y_pos, gfx_.get_width(), 1);
 
-    // --- Primary Level Display (y=12..23, font8x12) ---
+    y_pos = 12;
+    // --- Primary Level Display (y=12..33, font14x22_num) ---
+    // Option A: Percentage with 1 decimal (e.g. 84.5%)
     float level_percent = state.water_level_permille / 10.0f;
-    snprintf(buf, sizeof(buf), "%.1f%%", level_percent);
-    gfx_.draw_string_centered(12, buf, 1, 0, -1, &font8x12);
+    snprintf(buf, sizeof(buf), "%.1f", level_percent);
+
+    // Option B: Permille integer (e.g. 845‰)
+    // snprintf(buf, sizeof(buf), "%u\x7F", state.water_level_permille);
+    gfx_.draw_string_centered(y_pos, buf, 1, 0, -1, &font14x22_num);
 
     // --- Visual Level Bar (y=27..34, 116x8px) ---
-    y_pos = 35;
-    uint8_t bar_height = 8;
-    uint8_t bar_width = 116;
+    y_pos = 37;
+    uint8_t bar_height = 6;
+    uint8_t bar_width = 124;
     uint8_t bar_offset_x = (gfx_.get_width() - bar_width) / 2;
 
     gfx_.draw_rect(bar_offset_x, y_pos, bar_width, bar_height, 1);
@@ -286,7 +292,7 @@ void UIController::render_water_tank_screen(const SystemState& state)
     gfx_.draw_vline(bar_offset_x + 2 * quarter_width, y_pos, bar_height, 1);
     gfx_.draw_vline(bar_offset_x + 3 * quarter_width, y_pos, bar_height, 1);
 
-    // --- Footer Line 1 (y=47): Reading Status + Elapsed Time ---
+    // --- Footer Line 1 (y=47): Reading Status (Left) + Elapsed Time (Right) ---
     x_pos = 0;
     y_pos = 47;
 
@@ -300,17 +306,17 @@ void UIController::render_water_tank_screen(const SystemState& state)
 
     const char* status_str = sensor_status_to_string(state.water_sensor_status);
 
-    snprintf(
-        buf,
-        sizeof(buf),
-        "%s: %-3s    %02lu:%02lu",
-        I18n::get(StrId::LABEL_READING),
-        status_str,
-        static_cast<unsigned long>(mm),
-        static_cast<unsigned long>(ss));
+    // Left: Reading status (e.g. "Leitura: OK")
+    snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_READING), status_str);
     gfx_.draw_string(x_pos, y_pos, buf, 1);
 
-    // --- Footer Line 2 (y=57): Boia & Sensor Indicators ---
+    // Right: Elapsed time (e.g. "01:24") right-aligned to screen edge
+    char time_buf[16];
+    snprintf(time_buf, sizeof(time_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    int time_w = gfx_.get_string_width(time_buf);
+    gfx_.draw_string(gfx_.get_width() - time_w, y_pos, time_buf, 1);
+
+    // --- Footer Line 2 (y=57): Float & Sensor Indicators ---
     x_pos = 0;
     y_pos = 57;
 
@@ -327,17 +333,20 @@ void UIController::render_water_tank_screen(const SystemState& state)
         gfx_.draw_rect(x_pos + str_width + 2, y_pos, 7, 7, 1);
     }
 
-    x_pos = 64;
+    // Right-aligned Sensor indicator: indicator square ends at x=128 (x=121..127)
     snprintf(buf, sizeof(buf), "%s:", I18n::get(StrId::LABEL_SENSOR));
     str_width = gfx_.get_string_width(buf);
 
-    gfx_.draw_string(x_pos, y_pos, buf, 1);
+    int square_x = gfx_.get_width() - 7;
+    int text_x = square_x - 2 - str_width;
+
+    gfx_.draw_string(text_x, y_pos, buf, 1);
     bool sensor_ok = !state.water_backup_mode;
     if (sensor_ok) {
-        gfx_.fill_rect(x_pos + str_width + 2, y_pos, 7, 7, 1);
+        gfx_.fill_rect(square_x, y_pos, 7, 7, 1);
     }
     else {
-        gfx_.draw_rect(x_pos + str_width + 2, y_pos, 7, 7, 1);
+        gfx_.draw_rect(square_x, y_pos, 7, 7, 1);
     }
 }
 
