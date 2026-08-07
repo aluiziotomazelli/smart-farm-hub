@@ -39,7 +39,6 @@ struct LegacyWaterLevelReport
 
 espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg)
 {
-    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
     if (msg.payload_len == 0) {
         return espnow::AckStatus::ERROR_INVALID_DATA;
     }
@@ -100,8 +99,24 @@ espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg
         msg.rssi,
         static_cast<unsigned long long>(report.unix_time));
 
-    command_mgr_.process_node_wake(node_id, report.unix_time);
     return espnow::AckStatus::OK;
+}
+
+void WaterTankHandler::post_handle_payload(const espnow::AppMessage& msg)
+{
+    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
+    uint64_t unix_time = 0;
+
+    if (msg.payload_len >= sizeof(farm::WaterLevelReport)) {
+        const auto* report = reinterpret_cast<const farm::WaterLevelReport*>(msg.payload);
+        unix_time = report->unix_time;
+    }
+    else if (msg.payload_len >= sizeof(LegacyWaterLevelReport)) {
+        const auto* legacy = reinterpret_cast<const LegacyWaterLevelReport*>(msg.payload);
+        unix_time = legacy->unix_time;
+    }
+
+    command_mgr_.process_node_wake(node_id, unix_time);
 }
 
 } // namespace hub

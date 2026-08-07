@@ -21,6 +21,7 @@ public:
         idf_hals::IHalFreertos& rtos);
 
     espnow::AckStatus handle_payload(const espnow::AppMessage& msg) override;
+    void post_handle_payload(const espnow::AppMessage& msg) override;
 
 private:
     SystemState& state_;

@@ -95,6 +95,9 @@ void MessageDispatcher::dispatch_loop()
                 if (msg.requires_ack) {
                     espnow_.confirm_reception(msg.sender_id, msg.sequence_number, status);
                 }
+                if (status == espnow::AckStatus::OK) {
+                    it->second->post_handle_payload(msg);
+                }
             }
             else {
                 ESP_LOGW(TAG, "Unhandled payload 0x%02X from node 0x%02X", msg.payload_type, msg.sender_id);
