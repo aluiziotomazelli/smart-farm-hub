@@ -127,7 +127,7 @@ void UIController::handle_event(const UiEvent& event)
             case SubmenuItem::REBOOT_NODE:
                 if (app_cmd_queue_ != nullptr) {
                     AppCommand cmd;
-                    cmd.espnow_cmd = static_cast<espnow::CommandType>(0xFE);
+                    cmd.espnow_cmd = espnow::CommandType::REBOOT;
                     cmd.target_node = active_node_;
                     cmd.param = 0;
                     cmd.requires_ack = true;
@@ -456,7 +456,7 @@ void UIController::render_node_stats_screen(const SystemState& state)
     }
 
     uint8_t collumn_a_x_pos = 0;
-    uint8_t collumn_b_x_pos = 70;
+    uint8_t collumn_b_x_pos = 64;
 
     // --- Line 1 (y=12): RSSI ---
     uint8_t y_pos = 12;
@@ -485,19 +485,10 @@ void UIController::render_node_stats_screen(const SystemState& state)
 
     // --- Line 4 (y=42): RTT & Avg RTT ---
     y_pos = 42;
-    if (stats.rtt_last_us < 1000) {
-        snprintf(left_buf, sizeof(left_buf), "RTT: %luus", static_cast<unsigned long>(stats.rtt_last_us));
-    }
-    else {
-        snprintf(left_buf, sizeof(left_buf), "RTT: %.1fms", stats.rtt_last_us / 1000.0f);
-    }
-
-    if (stats.rtt_avg_us < 1000) {
-        snprintf(right_buf, sizeof(right_buf), "Avg: %luus", static_cast<unsigned long>(stats.rtt_avg_us));
-    }
-    else {
-        snprintf(right_buf, sizeof(right_buf), "Avg: %.1fms", stats.rtt_avg_us / 1000.0f);
-    }
+    format_compact_num(num_buf, sizeof(num_buf), stats.rtt_last_us);
+    snprintf(left_buf, sizeof(left_buf), "RTT: %s", num_buf);
+    format_compact_num(num_buf, sizeof(num_buf), stats.rtt_avg_us);
+    snprintf(right_buf, sizeof(right_buf), "Avg: %s", num_buf);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
