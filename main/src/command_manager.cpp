@@ -28,14 +28,14 @@ CommandManager::CommandManager(
 
 bool CommandManager::send_command(farm::NodeId target_node, espnow::CommandType cmd, bool requires_ack)
 {
-    PowerProfile profile = PowerProfile::DEEP_SLEEP;
+    farm::PowerProfile profile = farm::PowerProfile::DEEP_SLEEP;
 
     if (state_mutex_ != nullptr && rtos_.semaphore_take(state_mutex_, pdMS_TO_TICKS(50)) == pdTRUE) {
         profile = state_.node_power_profile[static_cast<uint8_t>(target_node)];
         rtos_.semaphore_give(state_mutex_);
     }
 
-    if (profile == PowerProfile::ALWAYS_ON) {
+    if (profile == farm::PowerProfile::ALWAYS_ON) {
         ESP_LOGI(
             TAG,
             "Node 0x%02X is ALWAYS_ON, attempting instant command 0x%02X dispatch...",

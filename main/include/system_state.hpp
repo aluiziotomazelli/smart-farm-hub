@@ -8,9 +8,10 @@
 #include "farm_protocol_types.hpp"
 #include "load_types.hpp"
 
-struct SystemState {
+struct SystemState
+{
     // ─── Per-Node Power Profile ───────────────────────────────────────
-    PowerProfile node_power_profile[256] = {};
+    farm::PowerProfile node_power_profile[256] = {};
 
     // ─── Water Tank Node ─────────────────────────────────────────────
     int64_t last_water_update_ts = 0; // ms since boot (esp_timer_get_time()/1000), 0=never
@@ -54,8 +55,7 @@ struct SystemState {
     {
         uint16_t total = 0;
         for (const auto& l : loads) {
-            if (l.control_mode != farm::ControlMode::OFF &&
-                l.active_source == farm::PowerSource::SOLAR) {
+            if (l.control_mode != farm::ControlMode::OFF && l.active_source == farm::PowerSource::SOLAR) {
                 total += l.power_w;
             }
         }
@@ -67,20 +67,17 @@ struct SystemState {
      */
     int16_t power_margin_w() const
     {
-        return static_cast<int16_t>(solar_power_w_avg) -
-               static_cast<int16_t>(total_solar_consumption_w());
+        return static_cast<int16_t>(solar_power_w_avg) - static_cast<int16_t>(total_solar_consumption_w());
     }
 
     bool is_water_data_fresh(int64_t now_ms, uint32_t max_age_ms) const
     {
-        return last_water_update_ts > 0 &&
-               (now_ms - last_water_update_ts) < static_cast<int64_t>(max_age_ms);
+        return last_water_update_ts > 0 && (now_ms - last_water_update_ts) < static_cast<int64_t>(max_age_ms);
     }
 
     bool is_solar_data_fresh(int64_t now_ms, uint32_t max_age_ms) const
     {
-        return last_solar_update_ts > 0 &&
-               (now_ms - last_solar_update_ts) < static_cast<int64_t>(max_age_ms);
+        return last_solar_update_ts > 0 && (now_ms - last_solar_update_ts) < static_cast<int64_t>(max_age_ms);
     }
 };
 

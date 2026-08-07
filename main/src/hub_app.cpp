@@ -136,7 +136,7 @@ esp_err_t HubApp::init_core_storage()
         default_core.reset();
         default_core.node_id = farm::NodeId::HUB;
         default_core.node_type = farm::NodeType::HUB;
-        default_core.power_profile = PowerProfile::ALWAYS_ON;
+        default_core.power_profile = farm::PowerProfile::ALWAYS_ON;
 
         ret = core_storage_.create_default_storage(core_, default_core);
         if (ret != ESP_OK) {
