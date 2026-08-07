@@ -39,6 +39,7 @@ public:
      * @brief Called when a node wakes up and sends telemetry.
      * Increments message counter, performs clock drift check, and drains pending FIFO commands.
      */
+
     void process_node_wake(farm::NodeId node_id, uint64_t node_unix_time_ms);
 
     /**
@@ -69,6 +70,8 @@ private:
     SystemState& state_;
     SemaphoreHandle_t state_mutex_;
     idf_hals::IHalFreertos& rtos_;
+
+    esp_err_t create_sync_time_packet(farm::TimeSyncCommand& out_sync_cmd) const;
 };
 
 } // namespace hub

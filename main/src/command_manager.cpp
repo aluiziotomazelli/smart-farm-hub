@@ -142,25 +142,33 @@ void CommandManager::dispatch_pending_commands(farm::NodeId node_id)
 esp_err_t CommandManager::dispatch_single_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack)
 {
     if (cmd == static_cast<espnow::CommandType>(farm::CommandType::SYNC_TIME)) {
-        if (!time_manager_.is_synchronized()) {
-            ESP_LOGW(
-                TAG,
-                "Cannot dispatch SYNC_TIME to 0x%02X: Hub is not time-synchronized",
-                static_cast<uint8_t>(node_id));
+        farm::TimeSyncCommand sync_pkt{};
+        if (create_sync_time_packet(sync_pkt) != ESP_OK) {
             return ESP_ERR_INVALID_STATE;
         }
 
-        auto packet = time_manager_.create_time_packet();
-        farm::TimeSyncCommand sync_cmd;
-        sync_cmd.timestamp_ms = packet.timestamp_ms;
-        sync_cmd.tz_offset_min = packet.tz_offset_min;
-        sync_cmd.sync_source = static_cast<uint8_t>(packet.sync_source);
-        sync_cmd.flags = packet.flags;
-
-        return espnow_.send_command(node_id, cmd, &sync_cmd, sizeof(sync_cmd), requires_ack);
+        return espnow_.send_command(node_id, cmd, &sync_pkt, sizeof(sync_pkt), requires_ack);
     }
 
     return espnow_.send_command(node_id, cmd, nullptr, 0, requires_ack);
+}
+
+// ====================================================================
+// Private helpers
+// ====================================================================
+esp_err_t CommandManager::create_sync_time_packet(farm::TimeSyncCommand& out_sync_cmd) const
+{
+    if (!time_manager_.is_synchronized()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    auto packet = time_manager_.create_time_packet();
+    out_sync_cmd.timestamp_ms = packet.timestamp_ms;
+    out_sync_cmd.tz_offset_min = packet.tz_offset_min;
+    out_sync_cmd.sync_source = static_cast<uint8_t>(packet.sync_source);
+    out_sync_cmd.flags = packet.flags;
+
+    return ESP_OK;
 }
 
 } // namespace hub
