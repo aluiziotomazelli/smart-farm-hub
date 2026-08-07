@@ -74,13 +74,12 @@ void WaterTankHandler::handle_payload(const espnow::AppMessage& msg)
         msg.rssi,
         static_cast<unsigned long long>(report->unix_time));
 
-    check_and_send_time_sync(node_id, report->unix_time);
-    dispatch_pending_command(node_id);
-
     if (msg.requires_ack) {
         espnow_.confirm_reception(msg.sender_id, msg.sequence_number, espnow::AckStatus::OK);
     }
 
+    check_and_send_time_sync(node_id, report->unix_time);
+    dispatch_pending_command(node_id);
     hub_storage_.save_app_data(stats_);
 }
 
