@@ -8,25 +8,25 @@ static const char* TAG = "RequestTimeSyncHandler";
 
 namespace hub {
 
-RequestTimeSyncHandler::RequestTimeSyncHandler(espnow::IEspNowManager& espnow, time_manager::ITimeManager& time)
-    : espnow_(espnow)
-    , time_(time)
+RequestTimeSyncHandler::RequestTimeSyncHandler(CommandManager& command_mgr)
+    : command_mgr_(command_mgr)
 {
 }
 
-void RequestTimeSyncHandler::handle_payload(const espnow::AppMessage& msg)
+espnow::AckStatus RequestTimeSyncHandler::handle_payload(const espnow::AppMessage& msg)
 {
     auto node_id = static_cast<farm::NodeId>(msg.sender_id);
-    ESP_LOGI(TAG, "Node: 0x%02X", static_cast<uint8_t>(node_id));
+    ESP_LOGI(TAG, "Time sync requested by Node: 0x%02X", static_cast<uint8_t>(node_id));
 
-    if (!time_.is_synchronized()) {
-        ESP_LOGW(TAG, "Cannot respond to time sync request: Hub is not synchronized");
-        return;
+    esp_err_t err = command_mgr_.dispatch_single_command(
+        node_id, static_cast<espnow::CommandType>(farm::CommandType::SYNC_TIME), /*requires_ack=*/false);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to respond to time sync request for Node 0x%02X", static_cast<uint8_t>(node_id));
+        return espnow::AckStatus::ERROR_PROCESSING;
     }
 
-    auto packet = time_.create_time_packet();
-    espnow_.send_command(
-        node_id, static_cast<espnow::CommandType>(farm::CommandType::SYNC_TIME), &packet, sizeof(packet), false);
+    return espnow::AckStatus::OK;
 }
 
 } // namespace hub

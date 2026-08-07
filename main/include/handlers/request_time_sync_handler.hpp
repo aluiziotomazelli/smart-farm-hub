@@ -1,8 +1,7 @@
-// main/include/handlers/request_sync_time_handler.hpp
+// main/include/handlers/request_time_sync_handler.hpp
 #pragma once
 
-#include "espnow_manager.hpp"
-#include "time_manager.hpp"
+#include "command_manager.hpp"
 #include "farm_protocol_types.hpp"
 #include "interfaces/i_payload_handler.hpp"
 
@@ -11,13 +10,12 @@ namespace hub {
 class RequestTimeSyncHandler : public IPayloadHandler
 {
 public:
-    explicit RequestTimeSyncHandler(espnow::IEspNowManager& espnow, time_manager::ITimeManager& time);
+    explicit RequestTimeSyncHandler(CommandManager& command_mgr);
 
-    void handle_payload(const espnow::AppMessage& msg) override;
+    espnow::AckStatus handle_payload(const espnow::AppMessage& msg) override;
 
 private:
-    espnow::IEspNowManager& espnow_;
-    time_manager::ITimeManager& time_;
+    CommandManager& command_mgr_;
 };
 
 } // namespace hub

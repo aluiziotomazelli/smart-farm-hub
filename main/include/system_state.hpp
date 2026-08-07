@@ -4,10 +4,14 @@
 #include "freertos/semphr.h"
 #include <cstdint>
 
+#include "core_types.hpp"
 #include "farm_protocol_types.hpp"
 #include "load_types.hpp"
 
 struct SystemState {
+    // ─── Per-Node Power Profile ───────────────────────────────────────
+    PowerProfile node_power_profile[256] = {};
+
     // ─── Water Tank Node ─────────────────────────────────────────────
     int64_t last_water_update_ts = 0; // ms since boot (esp_timer_get_time()/1000), 0=never
     uint16_t water_level_permille = 0;

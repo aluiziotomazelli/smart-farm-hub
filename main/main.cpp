@@ -17,6 +17,7 @@
 #include "rotary_encoder.hpp"
 
 #include "app_commands.hpp"
+#include "command_manager.hpp"
 #include "display_manager.hpp"
 #include "espnow_manager.hpp"
 #include "handlers/ota_status_handler.hpp"
@@ -154,12 +155,16 @@ extern "C" void app_main()
         return;
     }
 
-    // Create and register payload handlers with the MessageDispatcher'
-    static hub::MessageDispatcher msg_dispatcher(rx_queue, hal_freertos);
+    static hub::CommandManager command_mgr(
+        espnow, app.get_stats(), nvs_hub, app_time_manager, g_system_state, g_state_mutex, hal_freertos);
+    app.set_command_manager(command_mgr);
+
+    // Create and register payload handlers with the MessageDispatcher
+    static hub::MessageDispatcher msg_dispatcher(rx_queue, espnow, hal_freertos);
     static hub::WaterTankHandler water_tank_handler(
-        g_system_state, g_state_mutex, app.get_stats(), nvs_hub, espnow, app_time_manager, hal_freertos);
-    static hub::OtaStatusHandler ota_status_handler(espnow);
-    static hub::RequestTimeSyncHandler request_sync_time_handler(espnow, app_time_manager);
+        g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos);
+    static hub::OtaStatusHandler ota_status_handler;
+    static hub::RequestTimeSyncHandler request_sync_time_handler(command_mgr);
 
     msg_dispatcher.register_handler(farm::PayloadType::WATER_LEVEL_REPORT, &water_tank_handler);
     msg_dispatcher.register_handler(farm::PayloadType::OTA_STATUS_REPORT, &ota_status_handler);

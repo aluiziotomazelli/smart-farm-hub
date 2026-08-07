@@ -8,8 +8,10 @@ static const char* TAG = "MessageDispatcher";
 
 namespace hub {
 
-MessageDispatcher::MessageDispatcher(QueueHandle_t rx_queue, idf_hals::IHalFreertos& rtos)
+MessageDispatcher::MessageDispatcher(
+    QueueHandle_t rx_queue, espnow::IEspNowManager& espnow, idf_hals::IHalFreertos& rtos)
     : rx_queue_(rx_queue)
+    , espnow_(espnow)
     , rtos_(rtos)
 {
 }
@@ -89,10 +91,16 @@ void MessageDispatcher::dispatch_loop()
             uint8_t type_key = msg.payload_type;
             auto it = handlers_.find(type_key);
             if (it != handlers_.end() && it->second != nullptr) {
-                it->second->handle_payload(msg);
+                espnow::AckStatus status = it->second->handle_payload(msg);
+                if (msg.requires_ack) {
+                    espnow_.confirm_reception(msg.sender_id, msg.sequence_number, status);
+                }
             }
             else {
                 ESP_LOGW(TAG, "Unhandled payload 0x%02X from node 0x%02X", msg.payload_type, msg.sender_id);
+                if (msg.requires_ack) {
+                    espnow_.confirm_reception(msg.sender_id, msg.sequence_number, espnow::AckStatus::ERROR_INVALID_DATA);
+                }
             }
         }
     }

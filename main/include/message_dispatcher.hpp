@@ -5,6 +5,7 @@
 
 #include "farm_protocol_types.hpp"
 #include "hub_tasks.hpp"
+#include "i_espnow_manager.hpp"
 #include "interfaces/i_hal_freertos.hpp"
 #include "interfaces/i_payload_handler.hpp"
 
@@ -13,7 +14,7 @@ namespace hub {
 class MessageDispatcher
 {
 public:
-    MessageDispatcher(QueueHandle_t rx_queue, idf_hals::IHalFreertos& rtos);
+    MessageDispatcher(QueueHandle_t rx_queue, espnow::IEspNowManager& espnow, idf_hals::IHalFreertos& rtos);
     ~MessageDispatcher();
 
     esp_err_t register_handler(farm::PayloadType payload_type, IPayloadHandler* handler);
@@ -28,6 +29,7 @@ private:
     void dispatch_loop();
 
     QueueHandle_t rx_queue_;
+    espnow::IEspNowManager& espnow_;
     idf_hals::IHalFreertos& rtos_;
     TaskHandle_t task_handle_{nullptr};
     bool running_{false};

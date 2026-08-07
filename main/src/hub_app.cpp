@@ -203,13 +203,17 @@ void HubApp::log_boot_summary()
             static_cast<unsigned long>(stats_.commands_sent));
     }
 
-    for (const auto& p : stats_.pending_cmds) {
-        if (p.active) {
-            ESP_LOGW(
-                TAG,
-                "Pending command 0x%02X armed for node 0x%02X",
-                static_cast<uint8_t>(p.command),
-                static_cast<uint8_t>(p.node_id));
+    for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+        for (size_t c = 0; c < MAX_PENDING_PER_NODE; ++c) {
+            const auto& p = stats_.pending_cmds[r][c];
+            if (p.active) {
+                ESP_LOGW(
+                    TAG,
+                    "Pending command 0x%02X armed for node 0x%02X (slot %zu)",
+                    static_cast<uint8_t>(p.command),
+                    static_cast<uint8_t>(p.node_id),
+                    c);
+            }
         }
     }
 }
@@ -367,104 +371,12 @@ void HubApp::handle_app_command(const AppCommand& cmd)
         }
     }
     else {
-        if (set_pending_command(cmd.target_node, cmd.espnow_cmd, cmd.requires_ack)) {
+        if (cmd_mgr_ != nullptr && cmd_mgr_->send_command(cmd.target_node, cmd.espnow_cmd, cmd.requires_ack)) {
             ESP_LOGI(
                 TAG,
-                "Armed command 0x%02X (requires_ack=%d) for target node 0x%02X",
+                "Command 0x%02X processed for target node 0x%02X",
                 static_cast<uint8_t>(cmd.espnow_cmd),
-                cmd.requires_ack,
                 static_cast<uint8_t>(cmd.target_node));
-        }
-    }
-}
-
-void HubApp::dispatch_pending_command(farm::NodeId node_id)
-{
-    espnow::CommandType cmd;
-    bool requires_ack = true;
-    if (!has_pending_command(node_id, cmd, requires_ack))
-        return;
-
-    esp_err_t err;
-    if (cmd == static_cast<espnow::CommandType>(farm::CommandType::SYNC_TIME)) {
-        if (!time_manager_.is_synchronized()) {
-            ESP_LOGW(
-                TAG,
-                "Cannot dispatch SYNC_TIME to 0x%02X: Hub is not time-synchronized",
-                static_cast<uint8_t>(node_id));
-            return;
-        }
-        auto packet = time_manager_.create_time_packet();
-        farm::TimeSyncCommand sync_cmd;
-        sync_cmd.timestamp_ms = packet.timestamp_ms;
-        sync_cmd.tz_offset_min = packet.tz_offset_min;
-        sync_cmd.sync_source = static_cast<uint8_t>(packet.sync_source);
-        sync_cmd.flags = packet.flags;
-
-        err = espnow_.send_command(node_id, cmd, &sync_cmd, sizeof(sync_cmd), requires_ack);
-    }
-    else {
-        err = espnow_.send_command(node_id, cmd, nullptr, 0, requires_ack);
-    }
-
-    if (err == ESP_OK) {
-        clear_pending_command(node_id);
-        stats_.commands_sent++;
-
-        ESP_LOGW(
-            TAG, "Command 0x%02X dispatched to node 0x%02X", static_cast<uint8_t>(cmd), static_cast<uint8_t>(node_id));
-    }
-    else {
-        ESP_LOGE(
-            TAG, "Failed to dispatch command to node 0x%02X: %s", static_cast<uint8_t>(node_id), esp_err_to_name(err));
-    }
-}
-
-bool HubApp::set_pending_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack)
-{
-    // Check if already set
-    for (auto& entry : stats_.pending_cmds) {
-        if (entry.active && entry.node_id == node_id) {
-            ESP_LOGW(
-                TAG,
-                "Cannot arm command 0x%02X for node 0x%02X: Node already has pending command 0x%02X",
-                static_cast<uint8_t>(cmd),
-                static_cast<uint8_t>(node_id),
-                static_cast<uint8_t>(entry.command));
-            return false;
-        }
-    }
-    // Find empty slot
-    for (auto& entry : stats_.pending_cmds) {
-        if (!entry.active) {
-            entry = {true, node_id, cmd, requires_ack};
-            hub_storage_.save_app_data(stats_);
-            return true;
-        }
-    }
-    ESP_LOGE(TAG, "No free slot for pending command (MAX_HUB_NODES=%d)", MAX_HUB_NODES);
-    return false;
-}
-
-bool HubApp::has_pending_command(farm::NodeId node_id, espnow::CommandType& out_cmd, bool& out_requires_ack)
-{
-    for (const auto& entry : stats_.pending_cmds) {
-        if (entry.active && entry.node_id == node_id) {
-            out_cmd = entry.command;
-            out_requires_ack = entry.requires_ack;
-            return true;
-        }
-    }
-    return false;
-}
-
-void HubApp::clear_pending_command(farm::NodeId node_id)
-{
-    for (auto& entry : stats_.pending_cmds) {
-        if (entry.active && entry.node_id == node_id) {
-            entry = {};
-            hub_storage_.save_app_data(stats_);
-            return;
         }
     }
 }

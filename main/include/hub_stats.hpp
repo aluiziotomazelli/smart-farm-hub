@@ -6,6 +6,7 @@
 #include "protocol_types.hpp"   // espnow::CommandType
 
 static constexpr uint8_t MAX_HUB_NODES = 8;
+static constexpr uint8_t MAX_PENDING_PER_NODE = 4;
 
 /**
  * @brief Represents a pending command for a specific node.
@@ -27,7 +28,7 @@ struct PendingNodeCommand {
 
 struct HubStats {
     static constexpr uint32_t MAGIC = 0x485542; // "HUB"
-    static constexpr uint8_t VERSION = 2;
+    static constexpr uint8_t VERSION = 3;
 
     uint32_t magic = MAGIC;
     uint8_t version = VERSION;
@@ -39,13 +40,8 @@ struct HubStats {
     uint32_t messages_received  = 0;
     uint32_t commands_sent      = 0;
 
-    // Per-node pending commands (survives reboots via NVS)
-    PendingNodeCommand pending_cmds[MAX_HUB_NODES] = {};
-
-    // Last received water tank report (for continuity on reboot)
-    uint16_t last_wt_level_permille = 0;
-    float    last_wt_distance_cm    = 0.0f;
-    uint16_t last_wt_battery_mv     = 0;
+    // Per-node pending command FIFO queues (survives reboots via NVS)
+    PendingNodeCommand pending_cmds[MAX_HUB_NODES][MAX_PENDING_PER_NODE] = {};
 
     // CRC MUST BE LAST of the validated fields
     uint32_t crc = 0;
@@ -56,20 +52,93 @@ struct HubStats {
         version = VERSION;
     }
 
+    bool push_pending(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack) {
+        if (node_id == farm::NodeId::UNKNOWN) return false;
+
+        int target_row = -1;
+        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+            if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
+                target_row = static_cast<int>(r);
+                break;
+            }
+        }
+        if (target_row == -1) {
+            for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+                if (!pending_cmds[r][0].active) {
+                    target_row = static_cast<int>(r);
+                    break;
+                }
+            }
+        }
+
+        if (target_row == -1) return false;
+
+        for (size_t c = 0; c < MAX_PENDING_PER_NODE; ++c) {
+            if (!pending_cmds[target_row][c].active) {
+                pending_cmds[target_row][c] = {true, node_id, cmd, requires_ack};
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool pop_pending(farm::NodeId node_id, PendingNodeCommand& out_cmd) {
+        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+            if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
+                out_cmd = pending_cmds[r][0];
+                for (size_t c = 0; c < MAX_PENDING_PER_NODE - 1; ++c) {
+                    pending_cmds[r][c] = pending_cmds[r][c + 1];
+                }
+                pending_cmds[r][MAX_PENDING_PER_NODE - 1] = {};
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool peek_pending(farm::NodeId node_id, PendingNodeCommand& out_cmd) const {
+        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+            if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
+                out_cmd = pending_cmds[r][0];
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool has_pending(farm::NodeId node_id) const {
+        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+            if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void clear_pending(farm::NodeId node_id) {
+        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+            if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
+                for (size_t c = 0; c < MAX_PENDING_PER_NODE; ++c) {
+                    pending_cmds[r][c] = {};
+                }
+                return;
+            }
+        }
+    }
+
     bool operator==(const HubStats& other) const {
         if (magic != other.magic || version != other.version ||
             language != other.language ||
             messages_received != other.messages_received ||
-            commands_sent != other.commands_sent ||
-            last_wt_level_permille != other.last_wt_level_permille ||
-            last_wt_distance_cm != other.last_wt_distance_cm ||
-            last_wt_battery_mv != other.last_wt_battery_mv) {
+            commands_sent != other.commands_sent) {
             return false;
         }
 
-        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
-            if (pending_cmds[i] != other.pending_cmds[i]) {
-                return false;
+        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+            for (size_t c = 0; c < MAX_PENDING_PER_NODE; ++c) {
+                if (pending_cmds[r][c] != other.pending_cmds[r][c]) {
+                    return false;
+                }
             }
         }
 
