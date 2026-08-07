@@ -485,10 +485,12 @@ void UIController::render_node_stats_screen(const SystemState& state)
 
     // --- Line 4 (y=42): RTT & Avg RTT ---
     y_pos = 42;
-    format_compact_num(num_buf, sizeof(num_buf), stats.rtt_last_us);
-    snprintf(left_buf, sizeof(left_buf), "RTT: %s", num_buf);
-    format_compact_num(num_buf, sizeof(num_buf), stats.rtt_avg_us);
-    snprintf(right_buf, sizeof(right_buf), "Avg: %s", num_buf);
+    uint32_t rtt_last_ms = stats.rtt_last_us / 1000;
+    uint32_t rtt_avg_ms = stats.rtt_avg_us / 1000;
+    format_compact_num(num_buf, sizeof(num_buf), rtt_last_ms);
+    snprintf(left_buf, sizeof(left_buf), "RTT: %sms", num_buf);
+    format_compact_num(num_buf, sizeof(num_buf), rtt_avg_ms);
+    snprintf(right_buf, sizeof(right_buf), "Avg: %sms", num_buf);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 

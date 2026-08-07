@@ -286,6 +286,7 @@ esp_err_t HubApp::init_espnow(QueueHandle_t rx_queue)
     espnow_cfg.app_rx_queue = rx_queue;
     espnow_cfg.wifi_channel = 1;
     espnow_cfg.heartbeat_interval_ms = 0;
+    espnow_cfg.ack_timeout_ms = 500;
 
     esp_err_t err = espnow_.init(espnow_cfg);
     if (err != ESP_OK) {
