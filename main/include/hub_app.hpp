@@ -13,6 +13,7 @@
 #include "interfaces/i_wifi_manager.hpp"
 #include "i_espnow_manager.hpp"
 
+#include "app_commands.hpp"
 #include "command_manager.hpp"
 #include "core_types.hpp"
 #include "farm_protocol_types.hpp"
