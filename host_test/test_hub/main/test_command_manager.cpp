@@ -57,7 +57,7 @@ TEST_F(CommandManagerTest, DeepSleepNode_EnqueuesInFIFOQueue)
     hub::CommandManager sut(mock_espnow_, stats_, hub_storage_, mock_time_, state_, dummy_mutex_, mock_rtos_);
 
     auto target_node = farm::NodeId::WATER_TANK;
-    state_.node_power_profile[static_cast<uint8_t>(target_node)] = farm::PowerProfile::DEEP_SLEEP;
+    state_.nodes[static_cast<uint8_t>(target_node)].power_profile = farm::PowerProfile::DEEP_SLEEP;
 
     EXPECT_CALL(mock_espnow_, send_command(_, _, _, _, _)).Times(0);
 
@@ -75,7 +75,7 @@ TEST_F(CommandManagerTest, AlwaysOnNode_SendsImmediatelyOverEspNow)
     hub::CommandManager sut(mock_espnow_, stats_, hub_storage_, mock_time_, state_, dummy_mutex_, mock_rtos_);
 
     auto target_node = farm::NodeId::WATER_TANK;
-    state_.node_power_profile[static_cast<uint8_t>(target_node)] = farm::PowerProfile::ALWAYS_ON;
+    state_.nodes[static_cast<uint8_t>(target_node)].power_profile = farm::PowerProfile::ALWAYS_ON;
 
     EXPECT_CALL(
         mock_espnow_, send_command(static_cast<uint8_t>(target_node), espnow::CommandType::REBOOT, nullptr, 0, true))

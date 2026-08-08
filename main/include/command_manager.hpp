@@ -26,6 +26,8 @@ public:
         SemaphoreHandle_t state_mutex,
         idf_hals::IHalFreertos& rtos);
 
+    HubStats& get_stats() { return stats_; }
+
     /**
      * @brief Send a command to a target node.
      * Checks the node's PowerProfile:

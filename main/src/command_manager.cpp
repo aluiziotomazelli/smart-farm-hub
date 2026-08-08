@@ -31,7 +31,7 @@ bool CommandManager::send_command(farm::NodeId target_node, espnow::CommandType 
     farm::PowerProfile profile = farm::PowerProfile::DEEP_SLEEP;
 
     if (state_mutex_ != nullptr && rtos_.semaphore_take(state_mutex_, pdMS_TO_TICKS(50)) == pdTRUE) {
-        profile = state_.node_power_profile[static_cast<uint8_t>(target_node)];
+        profile = state_.nodes[static_cast<uint8_t>(target_node)].power_profile;
         rtos_.semaphore_give(state_mutex_);
     }
 
