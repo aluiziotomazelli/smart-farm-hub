@@ -149,8 +149,7 @@ void UIController::handle_event(const UiEvent& event)
             }
         }
         else if (
-            current_screen_ == ScreenMode::NODE_STATS_SCREEN ||
-            current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
+            current_screen_ == ScreenMode::NODE_STATS_SCREEN || current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
             current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN) {
             current_screen_ = ScreenMode::NODE_SUBMENU;
         }
@@ -174,8 +173,7 @@ void UIController::handle_event(const UiEvent& event)
             current_screen_ = get_screen_for_node(active_node_);
         }
         else if (
-            current_screen_ == ScreenMode::NODE_STATS_SCREEN ||
-            current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
+            current_screen_ == ScreenMode::NODE_STATS_SCREEN || current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
             current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN) {
             current_screen_ = ScreenMode::NODE_SUBMENU;
         }
@@ -548,40 +546,57 @@ void UIController::render_node_info_screen(const SystemState& state)
     }
 
     // --- Line 1 (y=13): Node ID ---
+    uint8_t y_pos = 15;
     snprintf(buf, sizeof(buf), "Node ID: 0x%02X", static_cast<uint8_t>(active_node_));
-    gfx_.draw_string(0, 13, buf, 1);
+    gfx_.draw_string(0, y_pos, buf, 1);
 
     // --- Line 2 (y=25): FW Version ---
+    y_pos += 13;
     if (meta != nullptr) {
         snprintf(buf, sizeof(buf), "FW: v%u.%u.%u", meta->fw_major, meta->fw_minor, meta->fw_patch);
-    } else {
+    }
+    else {
         snprintf(buf, sizeof(buf), "FW: --");
     }
-    gfx_.draw_string(0, 25, buf, 1);
+    gfx_.draw_string(0, y_pos, buf, 1);
 
     // --- Line 3 (y=37): Power Profile ---
+    y_pos += 13;
     const char* power_str = "--";
     if (meta != nullptr) {
         switch (meta->power_profile) {
-        case farm::PowerProfile::ALWAYS_ON:  power_str = "ALWAYS_ON";  break;
-        case farm::PowerProfile::LOW_POWER:  power_str = "LOW_POWER";  break;
-        case farm::PowerProfile::DEEP_SLEEP: power_str = "DEEP_SLEEP"; break;
+        case farm::PowerProfile::ALWAYS_ON:
+            power_str = "ALWAYS_ON";
+            break;
+        case farm::PowerProfile::LOW_POWER:
+            power_str = "LOW_POWER";
+            break;
+        case farm::PowerProfile::DEEP_SLEEP:
+            power_str = "DEEP_SLEEP";
+            break;
         }
     }
     snprintf(buf, sizeof(buf), "Power: %s", power_str);
-    gfx_.draw_string(0, 37, buf, 1);
+    gfx_.draw_string(0, y_pos, buf, 1);
 
     // --- Line 4 (y=49): MAC Address ---
+    y_pos += 13;
     if (peer_found) {
         snprintf(
-            buf, sizeof(buf),
+            buf,
+            sizeof(buf),
             "%02X:%02X:%02X:%02X:%02X:%02X",
-            peer_mac[0], peer_mac[1], peer_mac[2],
-            peer_mac[3], peer_mac[4], peer_mac[5]);
-    } else {
+            peer_mac[0],
+            peer_mac[1],
+            peer_mac[2],
+            peer_mac[3],
+            peer_mac[4],
+            peer_mac[5]);
+    }
+    else {
         snprintf(buf, sizeof(buf), "MAC: --");
     }
-    gfx_.draw_string(0, 49, buf, 1);
+    gfx_.draw_string(0, y_pos, buf, 1);
 }
 
 void UIController::render_water_tank_last_report_screen(const SystemState& state)
