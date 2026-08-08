@@ -8,6 +8,11 @@ static const char* TAG = "OtaStatusHandler";
 
 namespace hub {
 
+OtaStatusHandler::OtaStatusHandler(OnNodeVersionCb on_version_cb)
+    : on_version_cb_(on_version_cb)
+{
+}
+
 espnow::AckStatus OtaStatusHandler::handle_payload(const espnow::AppMessage& msg)
 {
     const auto* report = reinterpret_cast<const farm::OtaStatusReport*>(msg.payload);
@@ -25,6 +30,10 @@ espnow::AckStatus OtaStatusHandler::handle_payload(const espnow::AppMessage& msg
         report->fw_major,
         report->fw_minor,
         report->fw_patch);
+
+    if (on_version_cb_) {
+        on_version_cb_(msg.sender_id, report->fw_major, report->fw_minor, report->fw_patch);
+    }
 
     return espnow::AckStatus::OK;
 }

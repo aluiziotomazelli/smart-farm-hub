@@ -4,12 +4,8 @@
 - **Description**: Add a method in `EspNowManager` to reset/clear ESP-NOW packet loss counters, retry metrics, and peer transmission statistics for a specific `NodeId`.
 - **Target Use Case**: Required for option `5. Clear Stats` in the Universal Node Submenu to allow operators to benchmark connection quality from a fresh baseline.
 
-## 2. Remote Node Firmware Version (`fw_version`) Persistence & Display
-- **Description**: Store remote node firmware versions (`fw_version`) in Hub memory (`SystemState` / NVS) for each `NodeId`.
-- **Target Use Case**: Display firmware version on the `1. Last Report` screen without sending blocking on-demand queries to sleeping nodes.
-- **Population Strategy**:
-  - Update `fw_version` when node completes an OTA update and sends post-update handshake; or
-  - Include 2-byte `fw_version` field in common telemetry packet header.
+## 2. Remote Node Firmware Version (`fw_version`) Persistence & Display (COMPLETED)
+- **Status**: ✅ Implemented. `NodeFwVersion node_fw_version[256]` added to `SystemState`. `OtaStatusHandler` accepts an `OnNodeVersionCb` callback and triggers it upon receiving `OtaStatusReport`. `HubApp::on_node_version_received` updates RAM under `g_state_mutex` and marks `pending_tank_commit_ = true`, persisting to NVS asynchronously via `save_persistent_state()`.
 
 ## 3. Universal Node Submenu & Viewport Scrolling Engine (COMPLETED)
 - **Status**: ✅ Implemented in `UIController` with `SubmenuItem` enum and 4-item sliding window viewport renderer (`render_node_submenu`).

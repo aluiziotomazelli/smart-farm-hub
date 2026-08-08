@@ -8,10 +8,18 @@
 #include "farm_protocol_types.hpp"
 #include "load_types.hpp"
 
+struct NodeFwVersion
+{
+    uint8_t major = 0;
+    uint8_t minor = 0;
+    uint8_t patch = 0;
+};
+
 struct SystemState
 {
-    // ─── Per-Node Power Profile ───────────────────────────────────────
+    // ─── Per-Node Data ────────────────────────────────────────────────
     farm::PowerProfile node_power_profile[256] = {};
+    NodeFwVersion node_fw_version[256] = {};
 
     // ─── Water Tank Node ─────────────────────────────────────────────
     int64_t last_water_update_ts = 0; // ms since boot (esp_timer_get_time()/1000), 0=never

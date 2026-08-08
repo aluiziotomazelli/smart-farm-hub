@@ -6,8 +6,6 @@
 #include "espnow_manager.hpp"
 #include "secrets.hpp" // WIFI_SSID, WIFI_PASS, SERVER_URL (not committed)
 #include "system_state.hpp"
-#include "esp_timer.h"
-
 #include "version_helper.hpp"
 #include "i18n/i18n.hpp"
 
@@ -33,7 +31,8 @@ HubApp::HubApp(
     time_manager::ITimeManager& time_manager,
     idf_hals::IHalFreertos& rtos,
     idf_hals::ISystemHAL& hal_system,
-    idf_hals::ISleepHAL& hal_sleep)
+    idf_hals::ISleepHAL& hal_sleep,
+    idf_hals::ITimerHAL& hal_timer)
     : core_storage_(core_storage)
     , hub_storage_(hub_storage)
     , espnow_(espnow)
@@ -43,7 +42,7 @@ HubApp::HubApp(
     , hal_rtos_(rtos)
     , hal_system_(hal_system)
     , hal_sleep_(hal_sleep)
-
+    , hal_timer_(hal_timer)
 {
 }
 
@@ -320,6 +319,46 @@ esp_err_t HubApp::init_ota_manager()
     return ESP_OK;
 }
 
+static constexpr uint32_t NVS_PERIODIC_COMMIT_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+
+void HubApp::save_persistent_state()
+{
+    int64_t now_ms = hal_timer_.get_time_us() / 1000;
+
+    bool periodic_commit = (last_nvs_commit_ts_ > 0) &&
+                           ((now_ms - last_nvs_commit_ts_) >= NVS_PERIODIC_COMMIT_INTERVAL_MS);
+
+    if (periodic_commit) {
+        ESP_LOGI(
+            TAG,
+            "Periodic NVS commit triggered (%lu ms elapsed)",
+            static_cast<unsigned long>(now_ms - last_nvs_commit_ts_));
+    }
+
+    bool force_core = pending_core_commit_ || periodic_commit;
+    bool force_tank = pending_tank_commit_ || periodic_commit;
+
+    if (!force_core && !force_tank) {
+        return;
+    }
+
+    if (core_storage_.save_core(core_, force_core) == ESP_OK) {
+        pending_core_commit_ = false;
+    }
+    else {
+        ESP_LOGE(TAG, "Failed to save core storage to NVS");
+    }
+
+    if (hub_storage_.save_app_data(stats_, force_tank) == ESP_OK) {
+        pending_tank_commit_ = false;
+    }
+    else {
+        ESP_LOGE(TAG, "Failed to save hub stats to NVS");
+    }
+
+    last_nvs_commit_ts_ = now_ms;
+}
+
 void HubApp::run()
 {
     ESP_LOGI(
@@ -328,7 +367,8 @@ void HubApp::run()
         static_cast<unsigned long>(core_.boot_count));
 
     update_wifi_status();
-    last_wifi_poll_ts_ = esp_timer_get_time() / 1000;
+    last_wifi_poll_ts_ = hal_timer_.get_time_us() / 1000;
+    last_nvs_commit_ts_ = last_wifi_poll_ts_;
 
     AppCommand cmd;
     while (true) {
@@ -336,12 +376,25 @@ void HubApp::run()
             handle_app_command(cmd);
         }
 
-        int64_t now_ms = esp_timer_get_time() / 1000;
+        save_persistent_state();
+
+        int64_t now_ms = hal_timer_.get_time_us() / 1000;
         if (now_ms - last_wifi_poll_ts_ >= 5000) {
             last_wifi_poll_ts_ = now_ms;
             update_wifi_status();
         }
     }
+}
+
+void HubApp::on_node_version_received(uint8_t node_id, uint8_t major, uint8_t minor, uint8_t patch)
+{
+    if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
+        g_system_state.node_fw_version[node_id] = {major, minor, patch};
+        hal_rtos_.semaphore_give(g_state_mutex);
+    }
+
+    pending_tank_commit_ = true;
+    ESP_LOGI(TAG, "Received FW version v%u.%u.%u for node 0x%02X, marked NVS commit pending", major, minor, patch, node_id);
 }
 
 void HubApp::handle_app_command(const AppCommand& cmd)

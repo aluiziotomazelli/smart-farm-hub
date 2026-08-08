@@ -6,6 +6,7 @@
 #include "interfaces/i_hal_freertos.hpp"
 #include "interfaces/i_hal_sleep.hpp"
 #include "interfaces/i_hal_system.hpp"
+#include "interfaces/i_hal_timer.hpp"
 #include "interfaces/i_hub_nvs.hpp"
 #include "interfaces/i_nvs_core.hpp"
 #include "interfaces/i_ota_manager.hpp"
@@ -37,7 +38,8 @@ public:
         time_manager::ITimeManager& time_manager,
         idf_hals::IHalFreertos& rtos,
         idf_hals::ISystemHAL& hal_system,
-        idf_hals::ISleepHAL& hal_sleep);
+        idf_hals::ISleepHAL& hal_sleep,
+        idf_hals::ITimerHAL& hal_timer);
 
     esp_err_t init(
         const HubAppConfig& config = {},
@@ -47,6 +49,7 @@ public:
 
     void set_command_manager(hub::CommandManager& cmd_mgr) { cmd_mgr_ = &cmd_mgr; }
     void handle_app_command(const AppCommand& cmd);
+    void on_node_version_received(uint8_t node_id, uint8_t major, uint8_t minor, uint8_t patch);
     HubStats& get_stats() { return stats_; }
 
 protected:
@@ -69,6 +72,7 @@ private:
     idf_hals::IHalFreertos& hal_rtos_;
     idf_hals::ISystemHAL& hal_system_;
     idf_hals::ISleepHAL& hal_sleep_;
+    idf_hals::ITimerHAL& hal_timer_;
 
     QueueHandle_t app_cmd_queue_ = nullptr;
     HubAppConfig config_;
@@ -83,6 +87,8 @@ private:
     void log_boot_summary();
     void check_firmware();
     void update_wifi_status();
+    void save_persistent_state();
 
     int64_t last_wifi_poll_ts_{0};
+    int64_t last_nvs_commit_ts_{0};
 };

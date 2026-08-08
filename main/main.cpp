@@ -143,7 +143,7 @@ extern "C" void app_main()
         ESP_LOGE(TAG, "Failed to initialize DisplayManager");
     }
 
-    HubApp app(nvs_core, nvs_hub, espnow, wifi, ota_manager, app_time_manager, hal_freertos, hal_system, hal_sleep);
+    HubApp app(nvs_core, nvs_hub, espnow, wifi, ota_manager, app_time_manager, hal_freertos, hal_system, hal_sleep, hal_timer);
 
     HubAppConfig config;
 
@@ -162,7 +162,10 @@ extern "C" void app_main()
     static hub::MessageDispatcher msg_dispatcher(rx_queue, espnow, hal_freertos);
     static hub::WaterTankHandler water_tank_handler(
         g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos);
-    static hub::OtaStatusHandler ota_status_handler;
+    static hub::OtaStatusHandler ota_status_handler(
+        [&app](uint8_t node_id, uint8_t major, uint8_t minor, uint8_t patch) {
+            app.on_node_version_received(node_id, major, minor, patch);
+        });
 
     msg_dispatcher.register_handler(farm::PayloadType::WATER_LEVEL_REPORT, &water_tank_handler);
     msg_dispatcher.register_handler(farm::PayloadType::OTA_STATUS_REPORT, &ota_status_handler);
