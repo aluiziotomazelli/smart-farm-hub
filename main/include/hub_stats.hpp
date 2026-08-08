@@ -3,30 +3,31 @@
 #include <cstdint>
 #include <cstddef>
 #include "farm_protocol_types.hpp"
-#include "protocol_types.hpp"   // espnow::CommandType
+#include "protocol_types.hpp" // espnow::CommandType
 
-static constexpr uint8_t MAX_HUB_NODES = farm::MAX_HUB_NODES;
 static constexpr uint8_t MAX_PENDING_PER_NODE = 4;
 
 /**
  * @brief Represents a pending command for a specific node.
  * active = false means no pending command for this slot.
  */
-struct PendingNodeCommand {
-    bool                  active      = false;
-    farm::NodeId          node_id     = farm::NodeId::UNKNOWN;
-    espnow::CommandType   command     = espnow::CommandType::START_OTA;
-    bool                  requires_ack = true;
+struct PendingNodeCommand
+{
+    bool active = false;
+    farm::NodeId node_id = farm::NodeId::UNKNOWN;
+    espnow::CommandType command = espnow::CommandType::START_OTA;
+    bool requires_ack = true;
 
-    bool operator==(const PendingNodeCommand& other) const {
-        return active == other.active && node_id == other.node_id && command == other.command && requires_ack == other.requires_ack;
+    bool operator==(const PendingNodeCommand& other) const
+    {
+        return active == other.active && node_id == other.node_id && command == other.command &&
+               requires_ack == other.requires_ack;
     }
-    bool operator!=(const PendingNodeCommand& other) const {
-        return !(*this == other);
-    }
+    bool operator!=(const PendingNodeCommand& other) const { return !(*this == other); }
 };
 
-struct HubStats {
+struct HubStats
+{
     static constexpr uint32_t MAGIC = 0x485542; // "HUB"
     static constexpr uint8_t VERSION = 6;
 
@@ -37,36 +38,39 @@ struct HubStats {
     uint8_t language = 0; // 0: EN_US, 1: PT_BR
 
     // Lifecycle counters
-    uint32_t messages_received  = 0;
-    uint32_t commands_sent      = 0;
+    uint32_t messages_received = 0;
+    uint32_t commands_sent = 0;
 
     // Per-node pending command FIFO queues (survives reboots via NVS)
-    PendingNodeCommand pending_cmds[MAX_HUB_NODES][MAX_PENDING_PER_NODE] = {};
+    PendingNodeCommand pending_cmds[farm::MAX_HUB_NODES][MAX_PENDING_PER_NODE] = {};
 
     // Per-node remote metadata (power profile & fw version, survives reboots via NVS)
-    farm::NodeMetadata node_info[MAX_HUB_NODES] = {};
+    farm::NodeMetadata node_info[farm::MAX_HUB_NODES] = {};
 
     // CRC MUST BE LAST of the validated fields
     uint32_t crc = 0;
 
-    void reset() {
+    void reset()
+    {
         *this = HubStats{};
         magic = MAGIC;
         version = VERSION;
     }
 
-    bool push_pending(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack) {
-        if (node_id == farm::NodeId::UNKNOWN) return false;
+    bool push_pending(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack)
+    {
+        if (node_id == farm::NodeId::UNKNOWN)
+            return false;
 
         int target_row = -1;
-        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+        for (size_t r = 0; r < farm::MAX_HUB_NODES; ++r) {
             if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
                 target_row = static_cast<int>(r);
                 break;
             }
         }
         if (target_row == -1) {
-            for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+            for (size_t r = 0; r < farm::MAX_HUB_NODES; ++r) {
                 if (!pending_cmds[r][0].active) {
                     target_row = static_cast<int>(r);
                     break;
@@ -74,7 +78,8 @@ struct HubStats {
             }
         }
 
-        if (target_row == -1) return false;
+        if (target_row == -1)
+            return false;
 
         for (size_t c = 0; c < MAX_PENDING_PER_NODE; ++c) {
             if (!pending_cmds[target_row][c].active) {
@@ -85,8 +90,9 @@ struct HubStats {
         return false;
     }
 
-    bool pop_pending(farm::NodeId node_id, PendingNodeCommand& out_cmd) {
-        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+    bool pop_pending(farm::NodeId node_id, PendingNodeCommand& out_cmd)
+    {
+        for (size_t r = 0; r < farm::MAX_HUB_NODES; ++r) {
             if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
                 out_cmd = pending_cmds[r][0];
                 for (size_t c = 0; c < MAX_PENDING_PER_NODE - 1; ++c) {
@@ -99,8 +105,9 @@ struct HubStats {
         return false;
     }
 
-    bool peek_pending(farm::NodeId node_id, PendingNodeCommand& out_cmd) const {
-        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+    bool peek_pending(farm::NodeId node_id, PendingNodeCommand& out_cmd) const
+    {
+        for (size_t r = 0; r < farm::MAX_HUB_NODES; ++r) {
             if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
                 out_cmd = pending_cmds[r][0];
                 return true;
@@ -109,8 +116,9 @@ struct HubStats {
         return false;
     }
 
-    bool has_pending(farm::NodeId node_id) const {
-        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+    bool has_pending(farm::NodeId node_id) const
+    {
+        for (size_t r = 0; r < farm::MAX_HUB_NODES; ++r) {
             if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
                 return true;
             }
@@ -118,8 +126,9 @@ struct HubStats {
         return false;
     }
 
-    void clear_pending(farm::NodeId node_id) {
-        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+    void clear_pending(farm::NodeId node_id)
+    {
+        for (size_t r = 0; r < farm::MAX_HUB_NODES; ++r) {
             if (pending_cmds[r][0].active && pending_cmds[r][0].node_id == node_id) {
                 for (size_t c = 0; c < MAX_PENDING_PER_NODE; ++c) {
                     pending_cmds[r][c] = {};
@@ -129,15 +138,17 @@ struct HubStats {
         }
     }
 
-    void set_node_power_profile(farm::NodeId node_id, farm::PowerProfile profile) {
-        if (node_id == farm::NodeId::UNKNOWN) return;
-        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+    void set_node_power_profile(farm::NodeId node_id, farm::PowerProfile profile)
+    {
+        if (node_id == farm::NodeId::UNKNOWN)
+            return;
+        for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
             if (node_info[i].node_id == node_id) {
                 node_info[i].power_profile = profile;
                 return;
             }
         }
-        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+        for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
             if (node_info[i].node_id == farm::NodeId::UNKNOWN) {
                 node_info[i].node_id = node_id;
                 node_info[i].power_profile = profile;
@@ -146,9 +157,11 @@ struct HubStats {
         }
     }
 
-    void set_node_fw_version(farm::NodeId node_id, uint8_t major, uint8_t minor, uint8_t patch) {
-        if (node_id == farm::NodeId::UNKNOWN) return;
-        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+    void set_node_fw_version(farm::NodeId node_id, uint8_t major, uint8_t minor, uint8_t patch)
+    {
+        if (node_id == farm::NodeId::UNKNOWN)
+            return;
+        for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
             if (node_info[i].node_id == node_id) {
                 node_info[i].fw_major = major;
                 node_info[i].fw_minor = minor;
@@ -156,7 +169,7 @@ struct HubStats {
                 return;
             }
         }
-        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+        for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
             if (node_info[i].node_id == farm::NodeId::UNKNOWN) {
                 node_info[i].node_id = node_id;
                 node_info[i].fw_major = major;
@@ -167,15 +180,14 @@ struct HubStats {
         }
     }
 
-    bool operator==(const HubStats& other) const {
-        if (magic != other.magic || version != other.version ||
-            language != other.language ||
-            messages_received != other.messages_received ||
-            commands_sent != other.commands_sent) {
+    bool operator==(const HubStats& other) const
+    {
+        if (magic != other.magic || version != other.version || language != other.language ||
+            messages_received != other.messages_received || commands_sent != other.commands_sent) {
             return false;
         }
 
-        for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+        for (size_t r = 0; r < farm::MAX_HUB_NODES; ++r) {
             for (size_t c = 0; c < MAX_PENDING_PER_NODE; ++c) {
                 if (pending_cmds[r][c] != other.pending_cmds[r][c]) {
                     return false;
@@ -183,7 +195,7 @@ struct HubStats {
             }
         }
 
-        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+        for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
             if (node_info[i] != other.node_info[i]) {
                 return false;
             }
@@ -192,7 +204,5 @@ struct HubStats {
         return true;
     }
 
-    bool operator!=(const HubStats& other) const {
-        return !(*this == other);
-    }
+    bool operator!=(const HubStats& other) const { return !(*this == other); }
 };

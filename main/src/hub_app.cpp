@@ -214,7 +214,7 @@ void HubApp::log_boot_summary()
             static_cast<unsigned long>(stats_.commands_sent));
     }
 
-    for (size_t r = 0; r < MAX_HUB_NODES; ++r) {
+    for (size_t r = 0; r < farm::MAX_HUB_NODES; ++r) {
         for (size_t c = 0; c < MAX_PENDING_PER_NODE; ++c) {
             const auto& p = stats_.pending_cmds[r][c];
             if (p.active) {
