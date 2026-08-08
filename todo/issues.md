@@ -14,11 +14,8 @@
 ## 3. Universal Node Submenu & Viewport Scrolling Engine (COMPLETED)
 - **Status**: ✅ Implemented in `UIController` with `SubmenuItem` enum and 4-item sliding window viewport renderer (`render_node_submenu`).
 
-## 4. Dynamic `PowerProfile` Telemetry & Hybrid Command Dispatch (Instant vs. Queued NVS)
-- **Description**: Incorporate 1-byte `PowerProfile` (`ALWAYS_ON`, `LOW_POWER`, `DEEP_SLEEP` from `core_types.hpp`) into telemetry reports sent by nodes.
-- **Target Use Case**: Allows the Hub to dynamically detect node power regimes:
-  - When `power_profile == ALWAYS_ON` (e.g. mains-powered pump node, or solar node during bright daylight), `HubApp::handle_app_command` sends commands **instantaneously over ESP-NOW (<10ms latency)**.
-  - When `power_profile == DEEP_SLEEP` (e.g. night time or battery-powered water tank node), `HubApp::handle_app_command` queues the command in NVS (`set_pending_command`) for delivery on the next wake cycle.
+## 4. Dynamic `PowerProfile` Telemetry & Hybrid Command Dispatch (Instant vs. Queued NVS) (COMPLETED)
+- **Status**: ✅ Implemented. Incorporated 1-byte `PowerProfile` (`ALWAYS_ON`, `LOW_POWER`, `DEEP_SLEEP`) into node telemetry reports (with 21-byte fallback parsing in `WaterTankHandler`). `CommandManager` dynamically dispatches commands instantly over ESP-NOW for `ALWAYS_ON` nodes, and enqueues commands in FIFO for `DEEP_SLEEP` / `LOW_POWER` nodes to drain on their next wake cycle.
 
 ## 5. Multi-Command Queue per Node (`PendingNodeCommand` FIFO Queue & Logging Fix) (COMPLETED)
 - **Status**: ✅ Implemented in `HubStats` with `pending_cmds[MAX_HUB_NODES][MAX_PENDING_PER_NODE]` matrix and FIFO methods (`push_pending`, `pop_pending`, `peek_pending`). Integrated with `CommandManager`.
