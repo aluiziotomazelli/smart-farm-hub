@@ -161,6 +161,18 @@ esp_err_t HubApp::init_hub_storage()
         if (stats_.language < static_cast<uint8_t>(Language::COUNT)) {
             I18n::set_language(static_cast<Language>(stats_.language));
         }
+
+        if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
+            for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+                const auto& fw_info = stats_.node_fw_versions[i];
+                if (fw_info.node_id != farm::NodeId::UNKNOWN) {
+                    uint8_t idx = static_cast<uint8_t>(fw_info.node_id);
+                    g_system_state.node_fw_version[idx] = {fw_info.major, fw_info.minor, fw_info.patch};
+                }
+            }
+            hal_rtos_.semaphore_give(g_state_mutex);
+        }
+
         return ESP_OK;
     }
 
@@ -325,8 +337,8 @@ void HubApp::save_persistent_state()
 {
     int64_t now_ms = hal_timer_.get_time_us() / 1000;
 
-    bool periodic_commit = (last_nvs_commit_ts_ > 0) &&
-                           ((now_ms - last_nvs_commit_ts_) >= NVS_PERIODIC_COMMIT_INTERVAL_MS);
+    bool periodic_commit =
+        (last_nvs_commit_ts_ > 0) && ((now_ms - last_nvs_commit_ts_) >= NVS_PERIODIC_COMMIT_INTERVAL_MS);
 
     if (periodic_commit) {
         ESP_LOGI(
@@ -336,7 +348,7 @@ void HubApp::save_persistent_state()
     }
 
     bool force_core = pending_core_commit_ || periodic_commit;
-    bool force_tank = pending_tank_commit_ || periodic_commit;
+    bool force_tank = pending_hub_commit_ || periodic_commit;
 
     if (!force_core && !force_tank) {
         return;
@@ -350,7 +362,7 @@ void HubApp::save_persistent_state()
     }
 
     if (hub_storage_.save_app_data(stats_, force_tank) == ESP_OK) {
-        pending_tank_commit_ = false;
+        pending_hub_commit_ = false;
     }
     else {
         ESP_LOGE(TAG, "Failed to save hub stats to NVS");
@@ -388,13 +400,22 @@ void HubApp::run()
 
 void HubApp::on_node_version_received(uint8_t node_id, uint8_t major, uint8_t minor, uint8_t patch)
 {
+    auto farm_node_id = static_cast<farm::NodeId>(node_id);
+
     if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
         g_system_state.node_fw_version[node_id] = {major, minor, patch};
         hal_rtos_.semaphore_give(g_state_mutex);
     }
 
-    pending_tank_commit_ = true;
-    ESP_LOGI(TAG, "Received FW version v%u.%u.%u for node 0x%02X, marked NVS commit pending", major, minor, patch, node_id);
+    stats_.set_node_fw_version(farm_node_id, major, minor, patch);
+    pending_hub_commit_ = true;
+    ESP_LOGI(
+        TAG,
+        "Received FW version v%u.%u.%u for node 0x%02X, saved to stats and marked NVS commit pending",
+        major,
+        minor,
+        patch,
+        node_id);
 }
 
 void HubApp::handle_app_command(const AppCommand& cmd)

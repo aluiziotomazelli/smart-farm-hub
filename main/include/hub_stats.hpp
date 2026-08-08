@@ -26,9 +26,23 @@ struct PendingNodeCommand {
     }
 };
 
+struct NodeFwVersionInfo {
+    farm::NodeId node_id = farm::NodeId::UNKNOWN;
+    uint8_t major = 0;
+    uint8_t minor = 0;
+    uint8_t patch = 0;
+
+    bool operator==(const NodeFwVersionInfo& other) const {
+        return node_id == other.node_id && major == other.major && minor == other.minor && patch == other.patch;
+    }
+    bool operator!=(const NodeFwVersionInfo& other) const {
+        return !(*this == other);
+    }
+};
+
 struct HubStats {
     static constexpr uint32_t MAGIC = 0x485542; // "HUB"
-    static constexpr uint8_t VERSION = 3;
+    static constexpr uint8_t VERSION = 4;
 
     uint32_t magic = MAGIC;
     uint8_t version = VERSION;
@@ -42,6 +56,9 @@ struct HubStats {
 
     // Per-node pending command FIFO queues (survives reboots via NVS)
     PendingNodeCommand pending_cmds[MAX_HUB_NODES][MAX_PENDING_PER_NODE] = {};
+
+    // Per-node remote firmware versions (survives reboots via NVS)
+    NodeFwVersionInfo node_fw_versions[MAX_HUB_NODES] = {};
 
     // CRC MUST BE LAST of the validated fields
     uint32_t crc = 0;
@@ -126,6 +143,22 @@ struct HubStats {
         }
     }
 
+    void set_node_fw_version(farm::NodeId node_id, uint8_t major, uint8_t minor, uint8_t patch) {
+        if (node_id == farm::NodeId::UNKNOWN) return;
+        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+            if (node_fw_versions[i].node_id == node_id) {
+                node_fw_versions[i] = {node_id, major, minor, patch};
+                return;
+            }
+        }
+        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+            if (node_fw_versions[i].node_id == farm::NodeId::UNKNOWN) {
+                node_fw_versions[i] = {node_id, major, minor, patch};
+                return;
+            }
+        }
+    }
+
     bool operator==(const HubStats& other) const {
         if (magic != other.magic || version != other.version ||
             language != other.language ||
@@ -139,6 +172,12 @@ struct HubStats {
                 if (pending_cmds[r][c] != other.pending_cmds[r][c]) {
                     return false;
                 }
+            }
+        }
+
+        for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+            if (node_fw_versions[i] != other.node_fw_versions[i]) {
+                return false;
             }
         }
 

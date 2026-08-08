@@ -41,10 +41,8 @@ public:
         idf_hals::ISleepHAL& hal_sleep,
         idf_hals::ITimerHAL& hal_timer);
 
-    esp_err_t init(
-        const HubAppConfig& config = {},
-        QueueHandle_t app_cmd_queue = nullptr,
-        QueueHandle_t rx_queue = nullptr);
+    esp_err_t
+    init(const HubAppConfig& config = {}, QueueHandle_t app_cmd_queue = nullptr, QueueHandle_t rx_queue = nullptr);
     void run();
 
     void set_command_manager(hub::CommandManager& cmd_mgr) { cmd_mgr_ = &cmd_mgr; }
@@ -59,7 +57,7 @@ protected:
     bool session_healthy_ = true;
     bool pending_firmware_verify_ = false;
     bool pending_core_commit_ = false;
-    bool pending_tank_commit_ = false;
+    bool pending_hub_commit_ = false;
 
 private:
     INvsCore& core_storage_;
