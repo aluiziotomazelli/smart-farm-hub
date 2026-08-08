@@ -112,6 +112,10 @@ void UIController::handle_event(const UiEvent& event)
                 current_screen_ = ScreenMode::NODE_STATS_SCREEN;
                 ESP_LOGI(TAG, "Entered NODE_STATS_SCREEN for node %d", static_cast<int>(active_node_));
                 break;
+            case SubmenuItem::CONFIG:
+                current_screen_ = ScreenMode::NODE_INFO_SCREEN;
+                ESP_LOGI(TAG, "Entered NODE_INFO_SCREEN for node %d", static_cast<int>(active_node_));
+                break;
             case SubmenuItem::START_OTA:
                 if (app_cmd_queue_ != nullptr) {
                     AppCommand cmd;
@@ -146,6 +150,7 @@ void UIController::handle_event(const UiEvent& event)
         }
         else if (
             current_screen_ == ScreenMode::NODE_STATS_SCREEN ||
+            current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
             current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN) {
             current_screen_ = ScreenMode::NODE_SUBMENU;
         }
@@ -170,6 +175,7 @@ void UIController::handle_event(const UiEvent& event)
         }
         else if (
             current_screen_ == ScreenMode::NODE_STATS_SCREEN ||
+            current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
             current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN) {
             current_screen_ = ScreenMode::NODE_SUBMENU;
         }
@@ -208,6 +214,9 @@ void UIController::render_current_screen(const SystemState& state)
         break;
     case ScreenMode::NODE_STATS_SCREEN:
         render_node_stats_screen(state);
+        break;
+    case ScreenMode::NODE_INFO_SCREEN:
+        render_node_info_screen(state);
         break;
     case ScreenMode::WATER_TANK_LAST_REPORT_SCREEN:
         render_water_tank_last_report_screen(state);
@@ -502,6 +511,77 @@ void UIController::render_node_stats_screen(const SystemState& state)
     snprintf(right_buf, sizeof(right_buf), "Err: %s", num_buf);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+}
+
+void UIController::render_node_info_screen(const SystemState& state)
+{
+    const char* node_name = get_node_name(active_node_);
+    char title_buf[32];
+    char buf[32];
+
+    // --- Header ---
+    snprintf(title_buf, sizeof(title_buf), "%s INFO", node_name);
+    gfx_.draw_string_centered(0, title_buf, 1);
+    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+
+    // --- Lookup NodeMetadata from SystemState ---
+    const farm::NodeMetadata* meta = nullptr;
+    for (const auto& n : state.nodes) {
+        if (n.node_id == active_node_) {
+            meta = &n;
+            break;
+        }
+    }
+
+    // --- Lookup PeerInfo from EspNow ---
+    uint8_t peer_mac[6] = {};
+    bool peer_found = false;
+    if (espnow_ != nullptr) {
+        auto peers = espnow_->get_peers();
+        for (const auto& p : peers) {
+            if (p.node_id == static_cast<espnow::NodeId>(active_node_)) {
+                memcpy(peer_mac, p.mac, 6);
+                peer_found = true;
+                break;
+            }
+        }
+    }
+
+    // --- Line 1 (y=13): Node ID ---
+    snprintf(buf, sizeof(buf), "Node ID: 0x%02X", static_cast<uint8_t>(active_node_));
+    gfx_.draw_string(0, 13, buf, 1);
+
+    // --- Line 2 (y=25): FW Version ---
+    if (meta != nullptr) {
+        snprintf(buf, sizeof(buf), "FW: v%u.%u.%u", meta->fw_major, meta->fw_minor, meta->fw_patch);
+    } else {
+        snprintf(buf, sizeof(buf), "FW: --");
+    }
+    gfx_.draw_string(0, 25, buf, 1);
+
+    // --- Line 3 (y=37): Power Profile ---
+    const char* power_str = "--";
+    if (meta != nullptr) {
+        switch (meta->power_profile) {
+        case farm::PowerProfile::ALWAYS_ON:  power_str = "ALWAYS_ON";  break;
+        case farm::PowerProfile::LOW_POWER:  power_str = "LOW_POWER";  break;
+        case farm::PowerProfile::DEEP_SLEEP: power_str = "DEEP_SLEEP"; break;
+        }
+    }
+    snprintf(buf, sizeof(buf), "Power: %s", power_str);
+    gfx_.draw_string(0, 37, buf, 1);
+
+    // --- Line 4 (y=49): MAC Address ---
+    if (peer_found) {
+        snprintf(
+            buf, sizeof(buf),
+            "%02X:%02X:%02X:%02X:%02X:%02X",
+            peer_mac[0], peer_mac[1], peer_mac[2],
+            peer_mac[3], peer_mac[4], peer_mac[5]);
+    } else {
+        snprintf(buf, sizeof(buf), "MAC: --");
+    }
+    gfx_.draw_string(0, 49, buf, 1);
 }
 
 void UIController::render_water_tank_last_report_screen(const SystemState& state)

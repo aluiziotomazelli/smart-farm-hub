@@ -21,6 +21,7 @@ enum class ScreenMode
     BOOT_SCREEN,
     NODE_SUBMENU,
     NODE_STATS_SCREEN,
+    NODE_INFO_SCREEN,
     WATER_TANK_LAST_REPORT_SCREEN
 };
 
@@ -49,6 +50,7 @@ public:
     void render_water_tank_last_report_screen(const SystemState& state);
     void render_node_submenu(const SystemState& state);
     void render_node_stats_screen(const SystemState& state);
+    void render_node_info_screen(const SystemState& state);
     void render_solar_screen(const SystemState& state);
     void render_loads_screen(const SystemState& state);
     void render_current_screen(const SystemState& state);

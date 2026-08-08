@@ -20,7 +20,7 @@ inline constexpr const char* STRINGS_EN[static_cast<size_t>(StrId::COUNT)] = {
     "1. Last Report",    // MENU_LAST_REPORT
     "2. ESP-NOW Stats",  // MENU_ESPNOW_STATS
     "3. Request Report", // MENU_REQUEST_REPORT
-    "4. Config",         // MENU_CONFIG
+    "4. Info",         // MENU_CONFIG
     "5. Clear Stats",    // MENU_CLEAR_STATS
     "6. Reboot Node",    // MENU_REBOOT_NODE
     "7. Start OTA",      // MENU_START_OTA
