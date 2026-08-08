@@ -45,9 +45,6 @@ protected:
         stats.magic = HubStats::MAGIC;
         stats.messages_received = 100;
         stats.commands_sent = 50;
-        stats.last_wt_level_permille = 750;
-        stats.last_wt_distance_cm = 45.5f;
-        stats.last_wt_battery_mv = 4100;
         stats.crc = calculate_test_crc(stats);
         return stats;
     }
@@ -83,7 +80,6 @@ TEST_F(HubNvsTest, LoadFromRtcWhenValid)
 
     EXPECT_EQ(ret, ESP_OK);
     EXPECT_EQ(loaded.messages_received, expected.messages_received);
-    EXPECT_EQ(loaded.last_wt_level_permille, expected.last_wt_level_permille);
 }
 
 TEST_F(HubNvsTest, LoadFromNvsWhenRtcInvalid)
