@@ -5,7 +5,7 @@
 #include "farm_protocol_types.hpp"
 #include "protocol_types.hpp"   // espnow::CommandType
 
-static constexpr uint8_t MAX_HUB_NODES = 8;
+static constexpr uint8_t MAX_HUB_NODES = farm::MAX_HUB_NODES;
 static constexpr uint8_t MAX_PENDING_PER_NODE = 4;
 
 /**
@@ -26,28 +26,9 @@ struct PendingNodeCommand {
     }
 };
 
-struct NodePersistedMetadata {
-    farm::NodeId node_id = farm::NodeId::UNKNOWN;
-    farm::PowerProfile power_profile = farm::PowerProfile::DEEP_SLEEP;
-    uint8_t fw_major = 0;
-    uint8_t fw_minor = 0;
-    uint8_t fw_patch = 0;
-
-    bool operator==(const NodePersistedMetadata& other) const {
-        return node_id == other.node_id &&
-               power_profile == other.power_profile &&
-               fw_major == other.fw_major &&
-               fw_minor == other.fw_minor &&
-               fw_patch == other.fw_patch;
-    }
-    bool operator!=(const NodePersistedMetadata& other) const {
-        return !(*this == other);
-    }
-};
-
 struct HubStats {
     static constexpr uint32_t MAGIC = 0x485542; // "HUB"
-    static constexpr uint8_t VERSION = 5;
+    static constexpr uint8_t VERSION = 6;
 
     uint32_t magic = MAGIC;
     uint8_t version = VERSION;
@@ -63,7 +44,7 @@ struct HubStats {
     PendingNodeCommand pending_cmds[MAX_HUB_NODES][MAX_PENDING_PER_NODE] = {};
 
     // Per-node remote metadata (power profile & fw version, survives reboots via NVS)
-    NodePersistedMetadata node_info[MAX_HUB_NODES] = {};
+    farm::NodeMetadata node_info[MAX_HUB_NODES] = {};
 
     // CRC MUST BE LAST of the validated fields
     uint32_t crc = 0;

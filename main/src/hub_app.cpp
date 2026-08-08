@@ -163,11 +163,11 @@ esp_err_t HubApp::init_hub_storage()
         }
 
         if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
-            for (size_t i = 0; i < MAX_HUB_NODES; ++i) {
+            for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
                 const auto& info = stats_.node_info[i];
                 if (info.node_id != farm::NodeId::UNKNOWN) {
-                    uint8_t idx = static_cast<uint8_t>(info.node_id);
-                    g_system_state.nodes[idx] = {info.power_profile, info.fw_major, info.fw_minor, info.fw_patch};
+                    g_system_state.set_node_power_profile(info.node_id, info.power_profile);
+                    g_system_state.set_node_fw_version(info.node_id, info.fw_major, info.fw_minor, info.fw_patch);
                 }
             }
             hal_rtos_.semaphore_give(g_state_mutex);
@@ -403,9 +403,7 @@ void HubApp::on_node_version_received(uint8_t node_id, uint8_t major, uint8_t mi
     auto farm_node_id = static_cast<farm::NodeId>(node_id);
 
     if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
-        g_system_state.nodes[node_id].fw_major = major;
-        g_system_state.nodes[node_id].fw_minor = minor;
-        g_system_state.nodes[node_id].fw_patch = patch;
+        g_system_state.set_node_fw_version(farm_node_id, major, minor, patch);
         hal_rtos_.semaphore_give(g_state_mutex);
     }
 

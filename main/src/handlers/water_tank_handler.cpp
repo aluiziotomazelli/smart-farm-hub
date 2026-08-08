@@ -81,7 +81,7 @@ espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg
         state_.water_float_switch_full = report.float_switch_is_full;
         state_.water_backup_mode = report.backup_mode_active;
         state_.water_node_unix_time = report.unix_time;
-        state_.nodes[msg.sender_id].power_profile = report.power_profile;
+        state_.set_node_power_profile(static_cast<farm::NodeId>(msg.sender_id), report.power_profile);
 
         rtos_.semaphore_give(state_mutex_);
     }

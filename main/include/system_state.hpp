@@ -8,18 +8,58 @@
 #include "farm_protocol_types.hpp"
 #include "load_types.hpp"
 
-struct NodeMetadata
-{
-    farm::PowerProfile power_profile = farm::PowerProfile::DEEP_SLEEP;
-    uint8_t fw_major = 0;
-    uint8_t fw_minor = 0;
-    uint8_t fw_patch = 0;
-};
-
 struct SystemState
 {
-    // ─── Per-Node Metadata ────────────────────────────────────────────
-    NodeMetadata nodes[256] = {};
+    // ─── Per-Node Metadata (up to farm::MAX_HUB_NODES) ────────────────
+    farm::NodeMetadata nodes[farm::MAX_HUB_NODES] = {};
+
+    farm::PowerProfile get_node_power_profile(farm::NodeId node_id) const
+    {
+        for (const auto& n : nodes) {
+            if (n.node_id == node_id) {
+                return n.power_profile;
+            }
+        }
+        return farm::PowerProfile::DEEP_SLEEP;
+    }
+
+    void set_node_power_profile(farm::NodeId node_id, farm::PowerProfile profile)
+    {
+        for (auto& n : nodes) {
+            if (n.node_id == node_id) {
+                n.power_profile = profile;
+                return;
+            }
+        }
+        for (auto& n : nodes) {
+            if (n.node_id == farm::NodeId::UNKNOWN) {
+                n.node_id = node_id;
+                n.power_profile = profile;
+                return;
+            }
+        }
+    }
+
+    void set_node_fw_version(farm::NodeId node_id, uint8_t major, uint8_t minor, uint8_t patch)
+    {
+        for (auto& n : nodes) {
+            if (n.node_id == node_id) {
+                n.fw_major = major;
+                n.fw_minor = minor;
+                n.fw_patch = patch;
+                return;
+            }
+        }
+        for (auto& n : nodes) {
+            if (n.node_id == farm::NodeId::UNKNOWN) {
+                n.node_id = node_id;
+                n.fw_major = major;
+                n.fw_minor = minor;
+                n.fw_patch = patch;
+                return;
+            }
+        }
+    }
 
     // ─── Water Tank Node ─────────────────────────────────────────────
     int64_t last_water_update_ts = 0; // ms since boot (esp_timer_get_time()/1000), 0=never
