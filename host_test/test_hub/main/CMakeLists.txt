@@ -5,17 +5,21 @@ idf_component_register(
         "test_hub_nvs.cpp"
         "test_command_manager.cpp"
         "test_ui_input_manager.cpp"
+        "test_ui_controller.cpp"
         "../../../main/src/command_manager.cpp"
         "../../../main/src/message_dispatcher.cpp"
         "../../../main/src/handlers/water_tank_handler.cpp"
         "../../../main/src/handlers/ota_status_handler.cpp"
         "../../../main/src/hub_nvs.cpp"
         "../../../main/src/ui_input_manager.cpp"
+        "../../../main/src/ui_controller.cpp"
     INCLUDE_DIRS 
         "."
         "../../../main/include"
         "../../../main"
         "../../../components/idf_hals/mocks"
+        "../../../components/display_gfx/include"
+        "../../../components/display_gfx/host_test/common"
         "../../mocks"
     REQUIRES 
         gtest
@@ -26,6 +30,7 @@ idf_component_register(
         ota_manager
         time_manager
         ui_inputs
+        display_gfx
         WHOLE_ARCHIVE
 )
 

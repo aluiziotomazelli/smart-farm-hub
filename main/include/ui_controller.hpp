@@ -69,6 +69,10 @@ private:
     farm::NodeId active_node_{farm::NodeId::WATER_TANK};
     int submenu_index_{0};
     static constexpr int SUBMENU_TOTAL_ITEMS = static_cast<int>(SubmenuItem::COUNT);
+    int settings_index_{0};
+    static constexpr int SETTINGS_TOTAL_ITEMS = 2;
+    int64_t pairing_start_ts_ms_{0};
+    bool pairing_active_{false};
 
     ScreenMode get_screen_for_node(farm::NodeId node) const;
     const char* get_node_name(farm::NodeId node) const;

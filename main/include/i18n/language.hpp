@@ -54,9 +54,11 @@ enum class StrId : uint8_t
     BOOT_STARTING, ///< Boot splash screen status text
 
     // Settings Screen
-    SETTINGS_LANGUAGE, ///< Language setting label
-    SETTINGS_LANG_EN,  ///< English language selection text
-    SETTINGS_LANG_PT,  ///< Portuguese language selection text
+    SETTINGS_LANGUAGE,       ///< Language setting label
+    SETTINGS_LANG_EN,        ///< English language selection text
+    SETTINGS_LANG_PT,        ///< Portuguese language selection text
+    SETTINGS_PAIRING,        ///< ESP-NOW pairing setting item
+    SETTINGS_PAIRING_ACTIVE, ///< ESP-NOW pairing active prefix
 
     COUNT ///< Sentinel value representing total number of localized strings
 };

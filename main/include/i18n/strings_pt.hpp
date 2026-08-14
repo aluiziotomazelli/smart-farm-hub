@@ -29,4 +29,6 @@ inline constexpr const char* STRINGS_PT[static_cast<size_t>(StrId::COUNT)] = {
     "Idioma",          // SETTINGS_LANGUAGE
     "Ingles",          // SETTINGS_LANG_EN
     "Portugues",       // SETTINGS_LANG_PT
+    "Parear ESP-NOW",  // SETTINGS_PAIRING
+    "Pareando",        // SETTINGS_PAIRING_ACTIVE
 };

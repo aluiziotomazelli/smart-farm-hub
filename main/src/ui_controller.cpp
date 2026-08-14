@@ -46,7 +46,7 @@ void UIController::handle_event(const UiEvent& event)
             current_screen_ = ScreenMode::SETTINGS_SCREEN;
         }
         else if (current_screen_ == ScreenMode::SETTINGS_SCREEN) {
-            current_screen_ = ScreenMode::MAIN_SCREEN;
+            settings_index_ = (settings_index_ + 1) % SETTINGS_TOTAL_ITEMS;
         }
         ESP_LOGI(
             TAG, "Navigated next -> screen %d (submenu idx %d)", static_cast<int>(current_screen_), submenu_index_);
@@ -60,7 +60,7 @@ void UIController::handle_event(const UiEvent& event)
             current_screen_ = ScreenMode::SETTINGS_SCREEN;
         }
         else if (current_screen_ == ScreenMode::SETTINGS_SCREEN) {
-            current_screen_ = ScreenMode::STATS_SCREEN;
+            settings_index_ = (settings_index_ - 1 + SETTINGS_TOTAL_ITEMS) % SETTINGS_TOTAL_ITEMS;
         }
         else if (current_screen_ == ScreenMode::STATS_SCREEN) {
             current_screen_ = ScreenMode::LOADS_SCREEN;
@@ -154,15 +154,29 @@ void UIController::handle_event(const UiEvent& event)
             current_screen_ = ScreenMode::NODE_SUBMENU;
         }
         else if (current_screen_ == ScreenMode::SETTINGS_SCREEN) {
-            Language new_lang = (I18n::get_language() == Language::EN_US) ? Language::PT_BR : Language::EN_US;
-            I18n::set_language(new_lang);
-            ESP_LOGI(TAG, "Toggled language -> %s", (new_lang == Language::PT_BR) ? "PT_BR" : "EN_US");
-            if (app_cmd_queue_ != nullptr) {
-                AppCommand cmd;
-                cmd.espnow_cmd = static_cast<espnow::CommandType>(0xFE);
-                cmd.target_node = farm::NodeId::HUB;
-                cmd.param = static_cast<uint32_t>(new_lang);
-                xQueueSend(app_cmd_queue_, &cmd, 0);
+            if (settings_index_ == 0) {
+                Language new_lang = (I18n::get_language() == Language::EN_US) ? Language::PT_BR : Language::EN_US;
+                I18n::set_language(new_lang);
+                ESP_LOGI(TAG, "Toggled language -> %s", (new_lang == Language::PT_BR) ? "PT_BR" : "EN_US");
+                if (app_cmd_queue_ != nullptr) {
+                    AppCommand cmd;
+                    cmd.espnow_cmd = static_cast<espnow::CommandType>(0xFE);
+                    cmd.target_node = farm::NodeId::HUB;
+                    cmd.param = static_cast<uint32_t>(new_lang);
+                    xQueueSend(app_cmd_queue_, &cmd, 0);
+                }
+            }
+            else if (settings_index_ == 1) {
+                int64_t now_ms = esp_timer_get_time() / 1000;
+                bool is_active = pairing_active_ && ((now_ms - pairing_start_ts_ms_) < 30000);
+                if (!is_active) {
+                    if (espnow_ != nullptr) {
+                        espnow_->start_pairing(30000);
+                    }
+                    pairing_active_ = true;
+                    pairing_start_ts_ms_ = now_ms;
+                    ESP_LOGI(TAG, "Started ESP-NOW pairing (30s)");
+                }
             }
         }
         break;
@@ -717,15 +731,37 @@ void UIController::render_settings_screen()
     gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_SETTINGS), 1);
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
 
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%s:", I18n::get(StrId::SETTINGS_LANGUAGE));
-    gfx_.draw_string(4, 16, buf, 1);
+    int64_t now_ms = esp_timer_get_time() / 1000;
+    int remaining_s = 0;
+    if (pairing_active_) {
+        int64_t elapsed_ms = now_ms - pairing_start_ts_ms_;
+        if (elapsed_ms < 30000) {
+            remaining_s = static_cast<int>((30000 - elapsed_ms + 999) / 1000);
+        }
+        else {
+            pairing_active_ = false;
+        }
+    }
 
+    char lang_buf[64];
     bool is_en = (I18n::get_language() == Language::EN_US);
-    bool is_pt = (I18n::get_language() == Language::PT_BR);
+    const char* lang_str = is_en ? I18n::get(StrId::SETTINGS_LANG_EN) : I18n::get(StrId::SETTINGS_LANG_PT);
+    snprintf(lang_buf, sizeof(lang_buf), "1. %s: %s", I18n::get(StrId::SETTINGS_LANGUAGE), lang_str);
+    gfx_.draw_string(4, 18, lang_buf, 1, nullptr, (settings_index_ == 0));
 
-    gfx_.draw_string(8, 30, I18n::get(StrId::SETTINGS_LANG_EN), 1, nullptr, is_en);
-    gfx_.draw_string(8, 44, I18n::get(StrId::SETTINGS_LANG_PT), 1, nullptr, is_pt);
+    char pairing_buf[64];
+    if (remaining_s > 0) {
+        snprintf(
+            pairing_buf,
+            sizeof(pairing_buf),
+            "2. %s: %ds",
+            I18n::get(StrId::SETTINGS_PAIRING_ACTIVE),
+            remaining_s);
+    }
+    else {
+        snprintf(pairing_buf, sizeof(pairing_buf), "2. %s", I18n::get(StrId::SETTINGS_PAIRING));
+    }
+    gfx_.draw_string(4, 34, pairing_buf, 1, nullptr, (settings_index_ == 1));
 }
 
 void UIController::render_boot_screen()

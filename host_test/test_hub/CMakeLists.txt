@@ -8,6 +8,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "../../components/ota_manager"
     "../../components/time_manager"
     "../../components/ui_inputs"
+    "../../components/display_gfx"
     "../gtest"
     
     "$ENV{IDF_PATH}/tools/mocks/driver"
@@ -26,6 +27,7 @@ set(COMPONENTS
     "time_manager"
     "wifi_manager"
     "ui_inputs"
+    "display_gfx"
     "esp_timer"
 )
 
