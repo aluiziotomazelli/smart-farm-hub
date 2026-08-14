@@ -126,30 +126,14 @@ esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t app_cmd_queue, 
 
 esp_err_t HubApp::init_core_storage()
 {
-    esp_err_t ret = core_storage_.load_core(core_);
+    CoreStorage default_core = {};
+    default_core.reset();
+    default_core.node_id = farm::NodeId::HUB;
+    default_core.node_type = farm::NodeType::HUB;
+    default_core.power_profile = farm::PowerProfile::ALWAYS_ON;
 
-    if (ret != ESP_OK) {
-        ESP_LOGW(TAG, "Core storage load failed (%s), recreating default storage", esp_err_to_name(ret));
-
-        CoreStorage default_core = {};
-        default_core.reset();
-        default_core.node_id = farm::NodeId::HUB;
-        default_core.node_type = farm::NodeType::HUB;
-        default_core.power_profile = farm::PowerProfile::ALWAYS_ON;
-
-        ret = core_storage_.create_default_storage(core_, default_core);
-        if (ret != ESP_OK) {
-            return ret;
-        }
-    }
-    else {
-        ESP_LOGI(TAG, "Loaded core data from storage");
-    }
-
-    core_storage_.process_boot_reasons(
-        core_, hal_system_.reset_reason(), hal_sleep_.get_wakeup_cause(), pending_core_commit_);
-
-    return ESP_OK;
+    return core_storage_.init(
+        core_, default_core, hal_system_.reset_reason(), hal_sleep_.get_wakeup_cause(), pending_core_commit_);
 }
 
 esp_err_t HubApp::init_hub_storage()
