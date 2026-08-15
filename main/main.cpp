@@ -21,6 +21,7 @@
 #include "display_manager.hpp"
 #include "espnow_manager.hpp"
 #include "handlers/ota_status_handler.hpp"
+#include "handlers/solar_sensor_handler.hpp"
 #include "handlers/water_tank_handler.hpp"
 #include "hub_app.hpp"
 #include "hub_nvs.hpp"
@@ -159,15 +160,23 @@ extern "C" void app_main()
     app.set_command_manager(command_mgr);
 
     // Create and register payload handlers with the MessageDispatcher
+    EventGroupHandle_t solar_events = hal_freertos.event_group_create();
+    if (solar_events == nullptr) {
+        ESP_LOGE(TAG, "Failed to create solar_events EventGroup");
+    }
+
     static hub::MessageDispatcher msg_dispatcher(rx_queue, espnow, hal_freertos);
     static hub::WaterTankHandler water_tank_handler(
         g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos);
+    static hub::SolarSensorHandler solar_sensor_handler(
+        g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos, solar_events);
     static hub::OtaStatusHandler ota_status_handler(
         [&app](uint8_t node_id, uint8_t major, uint8_t minor, uint8_t patch) {
             app.on_node_version_received(node_id, major, minor, patch);
         });
 
     msg_dispatcher.register_handler(farm::PayloadType::WATER_LEVEL_REPORT, &water_tank_handler);
+    msg_dispatcher.register_handler(farm::PayloadType::SOLAR_SENSOR_REPORT, &solar_sensor_handler);
     msg_dispatcher.register_handler(farm::PayloadType::OTA_STATUS_REPORT, &ota_status_handler);
 
     if (msg_dispatcher.start() != ESP_OK) {

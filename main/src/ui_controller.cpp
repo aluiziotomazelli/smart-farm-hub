@@ -104,6 +104,10 @@ void UIController::handle_event(const UiEvent& event)
                     current_screen_ = ScreenMode::WATER_TANK_LAST_REPORT_SCREEN;
                     ESP_LOGI(TAG, "Entered WATER_TANK_LAST_REPORT_SCREEN");
                 }
+                else if (active_node_ == farm::NodeId::SOLAR_SENSOR) {
+                    current_screen_ = ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN;
+                    ESP_LOGI(TAG, "Entered SOLAR_SENSOR_LAST_REPORT_SCREEN");
+                }
                 else {
                     current_screen_ = get_screen_for_node(active_node_);
                 }
@@ -150,7 +154,8 @@ void UIController::handle_event(const UiEvent& event)
         }
         else if (
             current_screen_ == ScreenMode::NODE_STATS_SCREEN || current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
-            current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN) {
+            current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN ||
+            current_screen_ == ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN) {
             current_screen_ = ScreenMode::NODE_SUBMENU;
         }
         else if (current_screen_ == ScreenMode::SETTINGS_SCREEN) {
@@ -188,7 +193,8 @@ void UIController::handle_event(const UiEvent& event)
         }
         else if (
             current_screen_ == ScreenMode::NODE_STATS_SCREEN || current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
-            current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN) {
+            current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN ||
+            current_screen_ == ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN) {
             current_screen_ = ScreenMode::NODE_SUBMENU;
         }
         else {
@@ -232,6 +238,9 @@ void UIController::render_current_screen(const SystemState& state)
         break;
     case ScreenMode::WATER_TANK_LAST_REPORT_SCREEN:
         render_water_tank_last_report_screen(state);
+        break;
+    case ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN:
+        render_solar_sensor_last_report_screen(state);
         break;
     case ScreenMode::SOLAR_SCREEN:
         render_solar_screen(state);
@@ -672,24 +681,136 @@ void UIController::render_water_tank_last_report_screen(const SystemState& state
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 }
 
+void UIController::render_solar_sensor_last_report_screen(const SystemState& state)
+{
+    gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_SOLAR_REPORT), 1);
+    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+
+    char left_buf[32];
+    char right_buf[32];
+    uint8_t collumn_a_x_pos = 0;
+    uint8_t collumn_b_x_pos = 64;
+
+    // --- Line 1 (y=11): Irradiance (Left) + Isc (Right) ---
+    uint8_t y_pos = 11;
+    snprintf(left_buf, sizeof(left_buf), "Irr: %u", state.solar_irradiance_wm2);
+    snprintf(right_buf, sizeof(right_buf), "Isc: %umA", state.solar_isc_current_ma);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 2 (y=21): Estimated Power (Left) + Battery mV (Right) ---
+    y_pos = 21;
+    snprintf(left_buf, sizeof(left_buf), "Pwr: %uW", state.solar_power_w_instant);
+    snprintf(right_buf, sizeof(right_buf), "Bat: %umV", state.solar_battery_mv);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 3 (y=31): Panel Temp (Left) + Battery % & State (Right) ---
+    y_pos = 31;
+    if (state.solar_panel_temp_c != INT16_MIN) {
+        snprintf(left_buf, sizeof(left_buf), "T: %.1fC", state.solar_panel_temp_c / 10.0f);
+    }
+    else {
+        snprintf(left_buf, sizeof(left_buf), "T: --");
+    }
+    const char* bat_state = battery_state_to_string(state.solar_battery_state);
+    snprintf(right_buf, sizeof(right_buf), "%u%% %s", state.solar_battery_percent, bat_state);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 4 (y=41): Node Yield mAh (Left) + Elapsed Age MM:SS (Right) ---
+    y_pos = 41;
+    snprintf(left_buf, sizeof(left_buf), "Yld: %lumAh", static_cast<unsigned long>(state.solar_daily_yield_mah));
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+
+    int64_t now_ms = esp_timer_get_time() / 1000;
+    uint32_t elapsed_s = 0;
+    if (state.last_solar_update_ts > 0 && now_ms >= state.last_solar_update_ts) {
+        elapsed_s = static_cast<uint32_t>((now_ms - state.last_solar_update_ts) / 1000);
+    }
+    uint32_t mm = elapsed_s / 60;
+    uint32_t ss = elapsed_s % 60;
+    snprintf(right_buf, sizeof(right_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    int age_w = gfx_.get_string_width(right_buf);
+    gfx_.draw_string(gfx_.get_width() - age_w, y_pos, right_buf, 1);
+
+    // --- Line 5 (y=51): Hub Wh Yield (Left) + Unix Time (Right) ---
+    y_pos = 51;
+    snprintf(left_buf, sizeof(left_buf), "Hub: %.1fWh", state.solar_daily_yield_wh_hub);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+
+    snprintf(right_buf, sizeof(right_buf), "T: %llu", static_cast<unsigned long long>(state.solar_node_unix_time / 1000));
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+}
+
 void UIController::render_solar_screen(const SystemState& state)
 {
     char buf[64];
-    gfx_.draw_string(0, 0, "[W]", 1);
-    gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_SOLAR), 1, 24, 128);
-    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+    uint8_t x_pos = 0;
+    uint8_t y_pos = 0;
 
-    snprintf(buf, sizeof(buf), "Instant: %u W", state.solar_power_w_instant);
-    gfx_.draw_string(0, 14, buf, 1);
+    // --- Header (y=0..7) ---
+    draw_wifi_signal_icon(x_pos, y_pos, state.wifi_connected, state.wifi_rssi);
+    gfx_.draw_string_centered(x_pos, I18n::get(StrId::HEADER_SOLAR), 1);
+    draw_battery_icon(112, y_pos, state.solar_battery_percent);
 
-    snprintf(buf, sizeof(buf), "Avg 5m:  %u W", state.solar_power_w_avg);
-    gfx_.draw_string(0, 26, buf, 1);
+    y_pos = 8;
+    gfx_.draw_hline(0, y_pos, gfx_.get_width(), 1);
 
-    snprintf(buf, sizeof(buf), "%s: %u mV", I18n::get(StrId::LABEL_SENSOR), state.solar_voltage_mv);
-    gfx_.draw_string(0, 38, buf, 1);
+    if (state.is_solar_night()) {
+        // --- Night Mode Display (y=18..36) ---
+        gfx_.draw_string_centered(18, I18n::get(StrId::SOLAR_LABEL_NIGHT), 1, 0, -1, &font8x12);
+        snprintf(buf, sizeof(buf), "Bat: %u mV (%u%%)", state.solar_battery_mv, state.solar_battery_percent);
+        gfx_.draw_string_centered(32, buf, 1);
+    }
+    else {
+        // --- Normal Primary Power Display (y=12..33, font14x22_num) ---
+        y_pos = 12;
+        snprintf(buf, sizeof(buf), "%u W", state.solar_power_w_instant);
+        gfx_.draw_string_centered(y_pos, buf, 1, 0, -1, &font14x22_num);
 
-    snprintf(buf, sizeof(buf), "Current: %u mA", state.solar_current_ma);
-    gfx_.draw_string(0, 50, buf, 1);
+        // --- Metrics Line (y=36): Irradiance (Left) + Temperature (Right) ---
+        y_pos = 36;
+        snprintf(buf, sizeof(buf), "%u W/m2", state.solar_irradiance_wm2);
+        gfx_.draw_string(0, y_pos, buf, 1);
+
+        if (state.solar_panel_temp_c != INT16_MIN) {
+            snprintf(buf, sizeof(buf), "%.1f C", state.solar_panel_temp_c / 10.0f);
+            int temp_w = gfx_.get_string_width(buf);
+            gfx_.draw_string(gfx_.get_width() - temp_w, y_pos, buf, 1);
+        }
+    }
+
+    // --- Footer Line 1 (y=47): Reading Status (Left) + Elapsed Age (Right) ---
+    x_pos = 0;
+    y_pos = 47;
+
+    int64_t now_ms = esp_timer_get_time() / 1000;
+    uint32_t elapsed_s = 0;
+    if (state.last_solar_update_ts > 0 && now_ms >= state.last_solar_update_ts) {
+        elapsed_s = static_cast<uint32_t>((now_ms - state.last_solar_update_ts) / 1000);
+    }
+    uint32_t mm = elapsed_s / 60;
+    uint32_t ss = elapsed_s % 60;
+
+    const char* status_str = sensor_status_to_string(state.solar_sensor_status);
+    snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_READING), status_str);
+    gfx_.draw_string(x_pos, y_pos, buf, 1);
+
+    char time_buf[16];
+    snprintf(time_buf, sizeof(time_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    int time_w = gfx_.get_string_width(time_buf);
+    gfx_.draw_string(gfx_.get_width() - time_w, y_pos, time_buf, 1);
+
+    // --- Footer Line 2 (y=57): Isc Current (Left) + Hub Daily Yield (Right) ---
+    x_pos = 0;
+    y_pos = 57;
+    snprintf(buf, sizeof(buf), "Isc: %u mA", state.solar_isc_current_ma);
+    gfx_.draw_string(x_pos, y_pos, buf, 1);
+
+    snprintf(buf, sizeof(buf), "%.1f Wh", state.solar_daily_yield_wh_hub);
+    int yield_w = gfx_.get_string_width(buf);
+    gfx_.draw_string(gfx_.get_width() - yield_w, y_pos, buf, 1);
 }
 
 void UIController::render_loads_screen(const SystemState& state)

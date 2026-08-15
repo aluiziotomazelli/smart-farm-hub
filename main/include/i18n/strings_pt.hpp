@@ -31,4 +31,10 @@ inline constexpr const char* STRINGS_PT[static_cast<size_t>(StrId::COUNT)] = {
     "Portugues",       // SETTINGS_LANG_PT
     "Parear ESP-NOW",  // SETTINGS_PAIRING
     "Pareando",        // SETTINGS_PAIRING_ACTIVE
+    "[SOL] ULT. REPORT", // HEADER_SOLAR_REPORT
+    "Irradiancia",     // SOLAR_LABEL_IRRADIANCE
+    "Isc",             // SOLAR_LABEL_ISC
+    "Temp Painel",     // SOLAR_LABEL_TEMP
+    "Producao",        // SOLAR_LABEL_YIELD
+    "Noite",           // SOLAR_LABEL_NIGHT
 };

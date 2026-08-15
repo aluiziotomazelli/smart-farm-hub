@@ -60,5 +60,13 @@ enum class StrId : uint8_t
     SETTINGS_PAIRING,        ///< ESP-NOW pairing setting item
     SETTINGS_PAIRING_ACTIVE, ///< ESP-NOW pairing active prefix
 
+    // Solar Sensor Screen
+    HEADER_SOLAR_REPORT,    ///< Last report screen header for solar sensor
+    SOLAR_LABEL_IRRADIANCE, ///< Irradiance label
+    SOLAR_LABEL_ISC,        ///< Short-circuit current label
+    SOLAR_LABEL_TEMP,       ///< Panel temperature label
+    SOLAR_LABEL_YIELD,      ///< Energy/current yield label
+    SOLAR_LABEL_NIGHT,      ///< Night mode label
+
     COUNT ///< Sentinel value representing total number of localized strings
 };

@@ -22,7 +22,8 @@ enum class ScreenMode
     NODE_SUBMENU,
     NODE_STATS_SCREEN,
     NODE_INFO_SCREEN,
-    WATER_TANK_LAST_REPORT_SCREEN
+    WATER_TANK_LAST_REPORT_SCREEN,
+    SOLAR_SENSOR_LAST_REPORT_SCREEN
 };
 
 enum class SubmenuItem : uint8_t
@@ -48,6 +49,7 @@ public:
     void render_boot_screen();
     void render_water_tank_screen(const SystemState& state);
     void render_water_tank_last_report_screen(const SystemState& state);
+    void render_solar_sensor_last_report_screen(const SystemState& state);
     void render_node_submenu(const SystemState& state);
     void render_node_stats_screen(const SystemState& state);
     void render_node_info_screen(const SystemState& state);

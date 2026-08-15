@@ -2,6 +2,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include <climits>
 #include <cstdint>
 
 #include "core_types.hpp"
@@ -73,12 +74,32 @@ struct SystemState
     bool water_backup_mode = false;
     uint64_t water_node_unix_time = 0;
 
-    // ─── Solar Generation ────────────────────────────────────────────
-    int64_t last_solar_update_ts = 0;
-    uint16_t solar_voltage_mv = 0;
-    uint16_t solar_current_ma = 0;
-    uint16_t solar_power_w_instant = 0; ///< Interpolated solar array AC power in Watts
-    uint16_t solar_power_w_avg = 0;     ///< Moving average of solar array AC power in Watts
+    // ─── Solar Sensor Node ───────────────────────────────────────────
+    int64_t last_solar_update_ts = 0; ///< ms since boot (0 = never)
+
+    // Raw fields from SolarSensorReport (node-filtered, EMA α≈0.8 applied on node)
+    uint16_t solar_isc_current_ma = 0;          ///< Ref cell short-circuit current (mA). Spec: 600mA @ 1000 W/m², 25°C
+    uint16_t solar_irradiance_wm2 = 0;          ///< Estimated solar irradiance (W/m²)
+    int16_t solar_panel_temp_c = INT16_MIN;     ///< Panel temp in 0.1°C. INT16_MIN = sensor absent
+    uint16_t solar_battery_mv = 0;              ///< Sensor node battery voltage (mV)
+    uint8_t solar_battery_percent = 0;          ///< Sensor node battery level (0–100)
+    farm::BatteryState solar_battery_state = farm::BatteryState::UNKNOWN;
+    farm::SensorStatus solar_sensor_status = farm::SensorStatus::UNKNOWN;
+    uint16_t solar_max_current_ma = 0;          ///< Peak Isc of current day (from node, for display)
+    uint32_t solar_daily_yield_mah = 0;         ///< Daily yield integral from node (mAh, display only)
+    bool solar_is_night_mode = false;
+    uint64_t solar_node_unix_time = 0;          ///< UTC epoch from node (0 = not synced)
+
+    // Hub-computed fields (derived by SolarSensorHandler via SolarPowerEstimator)
+    uint16_t solar_power_w_instant = 0;         ///< Estimated AC power of installation (W). Primary for LCT.
+    uint16_t solar_power_w_avg = 0;             ///< Alias for solar_power_w_instant (no hub-side smoothing)
+
+    // Hub-accumulated daily energy estimate (volatile, reset on reboot ~= last 24h)
+    float solar_daily_yield_wh_hub = 0.0f;      ///< Σ(power_w_instant × Δt_h) per report
+
+    // Hub-tracked daily temperature range (volatile, reset on reboot ~= last 24h)
+    int16_t solar_panel_temp_max_c = INT16_MIN; ///< Daily max panel temp (0.1°C)
+    int16_t solar_panel_temp_min_c = INT16_MAX; ///< Daily min panel temp (0.1°C)
 
     // ─── Electrical Loads ────────────────────────────────────────────
     LoadState loads[static_cast<uint8_t>(LoadIndex::MAX)] = {};
@@ -126,6 +147,11 @@ struct SystemState
     bool is_solar_data_fresh(int64_t now_ms, uint32_t max_age_ms) const
     {
         return last_solar_update_ts > 0 && (now_ms - last_solar_update_ts) < static_cast<int64_t>(max_age_ms);
+    }
+
+    bool is_solar_night() const
+    {
+        return solar_is_night_mode;
     }
 };
 
