@@ -634,30 +634,31 @@ void UIController::render_water_tank_last_report_screen(const SystemState& state
     uint8_t collumn_a_x_pos = 0;
     uint8_t collumn_b_x_pos = 64;
 
-    // --- Line 1 (y=11): Permille & Distance ---
-    uint8_t y_pos = 11;
+    uint8_t inter_line_space = 11;
+    // --- Line 1: Permille & Distance ---
+    uint8_t y_pos = 12;
     snprintf(left_buf, sizeof(left_buf), "Lv: %u", state.water_level_permille);
     snprintf(right_buf, sizeof(right_buf), "D: %.1fcm", state.water_distance_cm);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
-    // --- Line 2 (y=21): Raw Battery Voltage (mV) & Percentage ---
-    y_pos = 21;
+    // --- Line 2: Raw Battery Voltage (mV) & Percentage ---
+    y_pos += inter_line_space;
     snprintf(left_buf, sizeof(left_buf), "B: %umV", state.water_battery_mv);
     snprintf(right_buf, sizeof(right_buf), "(%u%%)", state.water_battery_percent);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
-    // --- Line 3 (y=31): Sensor Status & Operating Mode ---
-    y_pos = 31;
+    // --- Line 3: Sensor Status & Operating Mode ---
+    y_pos += inter_line_space;
     snprintf(left_buf, sizeof(left_buf), "Sens: %s", sensor_status_to_string(state.water_sensor_status));
     const char* mode_str = state.water_backup_mode ? "BACKUP" : "NORM";
     snprintf(right_buf, sizeof(right_buf), "Mode: %s", mode_str);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
-    // --- Line 4 (y=41): Float switch (Left) + Elapsed Age MM:SS (Right-aligned) ---
-    y_pos = 41;
+    // --- Line 4: Float switch (Left) + Elapsed Age MM:SS (Right-aligned) ---
+    y_pos += inter_line_space;
     const char* float_str =
         state.water_float_switch_full ? I18n::get(StrId::LABEL_FLOAT_FULL) : I18n::get(StrId::LABEL_FLOAT_EMPTY);
     snprintf(left_buf, sizeof(left_buf), "%s: %s", I18n::get(StrId::LABEL_FLOAT), float_str);
@@ -675,8 +676,8 @@ void UIController::render_water_tank_last_report_screen(const SystemState& state
     int age_w = gfx_.get_string_width(right_buf);
     gfx_.draw_string(gfx_.get_width() - age_w, y_pos, right_buf, 1);
 
-    // --- Line 5 (y=51): Raw Unix Timestamp ---
-    y_pos = 51;
+    // --- Line 5: Raw Unix Timestamp ---
+    y_pos += inter_line_space;
     snprintf(left_buf, sizeof(left_buf), "T: %llu", static_cast<unsigned long long>(state.water_node_unix_time / 1000));
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 }
@@ -688,41 +689,40 @@ void UIController::render_solar_sensor_last_report_screen(const SystemState& sta
 
     char left_buf[32];
     char right_buf[32];
+    char num_buf[16];
     uint8_t collumn_a_x_pos = 0;
     uint8_t collumn_b_x_pos = 64;
 
-    // --- Line 1 (y=11): Irradiance (Left) + Isc (Right) ---
-    uint8_t y_pos = 11;
+    uint8_t inter_line_space = 11;
+    // --- Line 1: Irradiance (Left) + Isc (Right) ---
+    uint8_t y_pos = 12;
     snprintf(left_buf, sizeof(left_buf), "Irr: %u", state.solar_irradiance_wm2);
     snprintf(right_buf, sizeof(right_buf), "Isc: %umA", state.solar_isc_current_ma);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
-    // --- Line 2 (y=21): Estimated Power (Left) + Battery mV (Right) ---
-    y_pos = 21;
+    // --- Line 2: Estimated Power (Left) + Battery mV (Right) ---
+    y_pos += inter_line_space;
     snprintf(left_buf, sizeof(left_buf), "Pwr: %uW", state.solar_power_w_instant);
-    snprintf(right_buf, sizeof(right_buf), "Bat: %umV", state.solar_battery_mv);
+    snprintf(right_buf, sizeof(right_buf), "Max: %umA", state.solar_max_current_ma);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
-    // --- Line 3 (y=31): Panel Temp (Left) + Battery % & State (Right) ---
-    y_pos = 31;
+    // --- Line 3: Raw Battery Voltage (mV) & Percentage ---
+    y_pos += inter_line_space;
+    snprintf(left_buf, sizeof(left_buf), "B: %umV", state.water_battery_mv);
+    snprintf(right_buf, sizeof(right_buf), "(%u%%)", state.water_battery_percent);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
+
+    // --- Line 4: Panel Temp (Left) + Elapsed Age MM:SS (Right) ---
+    y_pos += inter_line_space;
     if (state.solar_panel_temp_c != INT16_MIN) {
         snprintf(left_buf, sizeof(left_buf), "T: %.1fC", state.solar_panel_temp_c / 10.0f);
     }
     else {
         snprintf(left_buf, sizeof(left_buf), "T: --");
     }
-    const char* bat_state = battery_state_to_string(state.solar_battery_state);
-    snprintf(right_buf, sizeof(right_buf), "%u%% %s", state.solar_battery_percent, bat_state);
-    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
-    gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
-
-    // --- Line 4 (y=41): Node Yield mAh (Left) + Elapsed Age MM:SS (Right) ---
-    y_pos = 41;
-    snprintf(left_buf, sizeof(left_buf), "Yld: %lumAh", static_cast<unsigned long>(state.solar_daily_yield_mah));
-    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
-
     int64_t now_ms = esp_timer_get_time() / 1000;
     uint32_t elapsed_s = 0;
     if (state.last_solar_update_ts > 0 && now_ms >= state.last_solar_update_ts) {
@@ -730,22 +730,25 @@ void UIController::render_solar_sensor_last_report_screen(const SystemState& sta
     }
     uint32_t mm = elapsed_s / 60;
     uint32_t ss = elapsed_s % 60;
-    snprintf(right_buf, sizeof(right_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    snprintf(
+        right_buf, sizeof(right_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
     int age_w = gfx_.get_string_width(right_buf);
     gfx_.draw_string(gfx_.get_width() - age_w, y_pos, right_buf, 1);
 
-    // --- Line 5 (y=51): Hub Wh Yield (Left) + Unix Time (Right) ---
-    y_pos = 51;
-    snprintf(left_buf, sizeof(left_buf), "Hub: %.1fWh", state.solar_daily_yield_wh_hub);
+    // --- Line 5: Hub Wh Yield (Left) + Sensor status (Right) ---
+    y_pos += inter_line_space;
+    format_compact_num(num_buf, sizeof(num_buf), state.solar_daily_yield_wh_hub);
+    snprintf(left_buf, sizeof(left_buf), "Hub: %sWh", num_buf);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 
-    snprintf(right_buf, sizeof(right_buf), "T: %llu", static_cast<unsigned long long>(state.solar_node_unix_time / 1000));
+    snprintf(right_buf, sizeof(right_buf), "Sens: %s", sensor_status_to_string(state.solar_sensor_status));
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 }
 
 void UIController::render_solar_screen(const SystemState& state)
 {
     char buf[64];
+    char num_buf[16];
     uint8_t x_pos = 0;
     uint8_t y_pos = 0;
 
@@ -808,7 +811,8 @@ void UIController::render_solar_screen(const SystemState& state)
     snprintf(buf, sizeof(buf), "Isc: %u mA", state.solar_isc_current_ma);
     gfx_.draw_string(x_pos, y_pos, buf, 1);
 
-    snprintf(buf, sizeof(buf), "%.1f Wh", state.solar_daily_yield_wh_hub);
+    format_compact_num(num_buf, sizeof(num_buf), state.solar_daily_yield_wh_hub);
+    snprintf(buf, sizeof(buf), "%sWh", num_buf);
     int yield_w = gfx_.get_string_width(buf);
     gfx_.draw_string(gfx_.get_width() - yield_w, y_pos, buf, 1);
 }
@@ -873,11 +877,7 @@ void UIController::render_settings_screen()
     char pairing_buf[64];
     if (remaining_s > 0) {
         snprintf(
-            pairing_buf,
-            sizeof(pairing_buf),
-            "2. %s: %ds",
-            I18n::get(StrId::SETTINGS_PAIRING_ACTIVE),
-            remaining_s);
+            pairing_buf, sizeof(pairing_buf), "2. %s: %ds", I18n::get(StrId::SETTINGS_PAIRING_ACTIVE), remaining_s);
     }
     else {
         snprintf(pairing_buf, sizeof(pairing_buf), "2. %s", I18n::get(StrId::SETTINGS_PAIRING));
