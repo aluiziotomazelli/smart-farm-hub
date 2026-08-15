@@ -16,6 +16,14 @@
 
 static const char* TAG = "UIController";
 
+// Forward declarations for helpers
+static void format_compact_num(char* buf, size_t buf_size, uint32_t val);
+static void format_elapsed_time(char* buf, size_t buf_size, int64_t last_update_ts);
+static const char* sensor_status_to_string(farm::SensorStatus status);
+static const char* battery_state_to_string(farm::BatteryState state);
+static ScreenMode get_screen_for_node(farm::NodeId node);
+static const char* get_node_name(farm::NodeId node);
+
 UIController::UIController(IGraphicsContext& gfx, QueueHandle_t app_cmd_queue, espnow::IEspNowManager* espnow)
     : gfx_(gfx)
     , app_cmd_queue_(app_cmd_queue)
@@ -216,7 +224,6 @@ void UIController::handle_event(const UiEvent& event)
 // ===============================================================
 // Render Methods
 // ===============================================================
-static void format_compact_num(char* buf, size_t buf_size, uint32_t val);
 
 void UIController::render_current_screen(const SystemState& state)
 {
@@ -274,6 +281,7 @@ void UIController::render_main_screen(const SystemState& state)
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
 
     // --- Row 1: Level + Timestamp + Distance ---
+
     int64_t now_ms = esp_timer_get_time() / 1000;
     uint32_t elapsed_s = 0;
     if (state.last_water_update_ts > 0 && now_ms >= state.last_water_update_ts) {
@@ -377,21 +385,12 @@ void UIController::render_water_tank_screen(const SystemState& state)
     x_pos = 0;
     y_pos = 47;
 
-    int64_t now_ms = esp_timer_get_time() / 1000;
-    uint32_t elapsed_s = 0;
-    if (state.last_water_update_ts > 0 && now_ms >= state.last_water_update_ts) {
-        elapsed_s = static_cast<uint32_t>((now_ms - state.last_water_update_ts) / 1000);
-    }
-    uint32_t mm = elapsed_s / 60;
-    uint32_t ss = elapsed_s % 60;
-
     const char* status_str = sensor_status_to_string(state.water_sensor_status);
-
     snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_READING), status_str);
     gfx_.draw_string(x_pos, y_pos, buf, 1);
 
     char time_buf[16];
-    snprintf(time_buf, sizeof(time_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    format_elapsed_time(time_buf, sizeof(time_buf), state.last_water_update_ts);
     int time_w = gfx_.get_string_width(time_buf);
     gfx_.draw_string(gfx_.get_width() - time_w, y_pos, time_buf, 1);
 
@@ -664,15 +663,7 @@ void UIController::render_water_tank_last_report_screen(const SystemState& state
     snprintf(left_buf, sizeof(left_buf), "%s: %s", I18n::get(StrId::LABEL_FLOAT), float_str);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 
-    int64_t now_ms = esp_timer_get_time() / 1000;
-    uint32_t elapsed_s = 0;
-    if (state.last_water_update_ts > 0 && now_ms >= state.last_water_update_ts) {
-        elapsed_s = static_cast<uint32_t>((now_ms - state.last_water_update_ts) / 1000);
-    }
-    uint32_t mm = elapsed_s / 60;
-    uint32_t ss = elapsed_s % 60;
-    snprintf(
-        right_buf, sizeof(right_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    format_elapsed_time(right_buf, sizeof(right_buf), state.last_water_update_ts);
     int age_w = gfx_.get_string_width(right_buf);
     gfx_.draw_string(gfx_.get_width() - age_w, y_pos, right_buf, 1);
 
@@ -725,15 +716,7 @@ void UIController::render_solar_sensor_last_report_screen(const SystemState& sta
     }
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 
-    int64_t now_ms = esp_timer_get_time() / 1000;
-    uint32_t elapsed_s = 0;
-    if (state.last_solar_update_ts > 0 && now_ms >= state.last_solar_update_ts) {
-        elapsed_s = static_cast<uint32_t>((now_ms - state.last_solar_update_ts) / 1000);
-    }
-    uint32_t mm = elapsed_s / 60;
-    uint32_t ss = elapsed_s % 60;
-    snprintf(
-        right_buf, sizeof(right_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    format_elapsed_time(right_buf, sizeof(right_buf), state.last_solar_update_ts);
     int age_w = gfx_.get_string_width(right_buf);
     gfx_.draw_string(gfx_.get_width() - age_w, y_pos, right_buf, 1);
 
@@ -790,20 +773,12 @@ void UIController::render_solar_screen(const SystemState& state)
     x_pos = 0;
     y_pos = 47;
 
-    int64_t now_ms = esp_timer_get_time() / 1000;
-    uint32_t elapsed_s = 0;
-    if (state.last_solar_update_ts > 0 && now_ms >= state.last_solar_update_ts) {
-        elapsed_s = static_cast<uint32_t>((now_ms - state.last_solar_update_ts) / 1000);
-    }
-    uint32_t mm = elapsed_s / 60;
-    uint32_t ss = elapsed_s % 60;
-
     const char* status_str = sensor_status_to_string(state.solar_sensor_status);
     snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_READING), status_str);
     gfx_.draw_string(x_pos, y_pos, buf, 1);
 
     char time_buf[16];
-    snprintf(time_buf, sizeof(time_buf), "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    format_elapsed_time(time_buf, sizeof(time_buf), state.last_solar_update_ts);
     int time_w = gfx_.get_string_width(time_buf);
     gfx_.draw_string(gfx_.get_width() - time_w, y_pos, time_buf, 1);
 
@@ -909,7 +884,22 @@ static void format_compact_num(char* buf, size_t buf_size, uint32_t val)
     }
 }
 
-const char* UIController::get_node_name(farm::NodeId node) const
+static void format_elapsed_time(char* buf, size_t buf_size, int64_t last_update_ts)
+{
+    if (!buf || buf_size == 0)
+        return;
+
+    int64_t now_ms = esp_timer_get_time() / 1000;
+    uint32_t elapsed_s = 0;
+    if (last_update_ts > 0 && now_ms >= last_update_ts) {
+        elapsed_s = static_cast<uint32_t>((now_ms - last_update_ts) / 1000);
+    }
+    uint32_t mm = elapsed_s / 60;
+    uint32_t ss = elapsed_s % 60;
+    snprintf(buf, buf_size, "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+}
+
+static const char* get_node_name(farm::NodeId node)
 {
     switch (node) {
     case farm::NodeId::WATER_TANK:
@@ -923,7 +913,7 @@ const char* UIController::get_node_name(farm::NodeId node) const
     }
 }
 
-ScreenMode UIController::get_screen_for_node(farm::NodeId node) const
+static ScreenMode get_screen_for_node(farm::NodeId node)
 {
     switch (node) {
     case farm::NodeId::WATER_TANK:
@@ -937,7 +927,7 @@ ScreenMode UIController::get_screen_for_node(farm::NodeId node) const
     }
 }
 
-const char* UIController::battery_state_to_string(farm::BatteryState state)
+static const char* battery_state_to_string(farm::BatteryState state)
 {
     switch (state) {
     case farm::BatteryState::CRITICAL:
@@ -953,7 +943,7 @@ const char* UIController::battery_state_to_string(farm::BatteryState state)
     }
 }
 
-const char* UIController::sensor_status_to_string(farm::SensorStatus status)
+static const char* sensor_status_to_string(farm::SensorStatus status)
 {
     switch (status) {
     case farm::SensorStatus::OK:

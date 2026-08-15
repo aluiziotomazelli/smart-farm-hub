@@ -42,7 +42,10 @@ enum class SubmenuItem : uint8_t
 class UIController
 {
 public:
-    explicit UIController(IGraphicsContext& gfx, QueueHandle_t app_cmd_queue = nullptr, espnow::IEspNowManager* espnow = nullptr);
+    explicit UIController(
+        IGraphicsContext& gfx,
+        QueueHandle_t app_cmd_queue = nullptr,
+        espnow::IEspNowManager* espnow = nullptr);
     void render_main_screen(const SystemState& state);
     void render_stats_screen(const SystemState& state);
     void render_settings_screen();
@@ -76,12 +79,6 @@ private:
     int64_t pairing_start_ts_ms_{0};
     bool pairing_active_{false};
 
-    ScreenMode get_screen_for_node(farm::NodeId node) const;
-    const char* get_node_name(farm::NodeId node) const;
-    const char* battery_state_to_string(farm::BatteryState state);
-    const char* sensor_status_to_string(farm::SensorStatus status);
-
     void draw_wifi_signal_icon(int x, int y, bool connected, int8_t rssi);
     void draw_battery_icon(int x, int y, uint8_t percent);
 };
-
