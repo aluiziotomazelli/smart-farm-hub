@@ -697,14 +697,14 @@ void UIController::render_solar_sensor_last_report_screen(const SystemState& sta
     // --- Line 1: Irradiance (Left) + Isc (Right) ---
     uint8_t y_pos = 12;
     snprintf(left_buf, sizeof(left_buf), "Irr: %u", state.solar_irradiance_wm2);
-    snprintf(right_buf, sizeof(right_buf), "Isc: %umA", state.solar_isc_current_ma);
+    snprintf(right_buf, sizeof(right_buf), "Isc: %u", state.solar_isc_current_ma);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
     // --- Line 2: Estimated Power (Left) + Battery mV (Right) ---
     y_pos += inter_line_space;
-    snprintf(left_buf, sizeof(left_buf), "Pwr: %uW", state.solar_power_w_instant);
-    snprintf(right_buf, sizeof(right_buf), "Max: %umA", state.solar_max_current_ma);
+    snprintf(left_buf, sizeof(left_buf), "P: %uW", state.solar_power_w_instant);
+    snprintf(right_buf, sizeof(right_buf), "Max: %u", state.solar_max_current_ma);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
@@ -723,6 +723,8 @@ void UIController::render_solar_sensor_last_report_screen(const SystemState& sta
     else {
         snprintf(left_buf, sizeof(left_buf), "T: --");
     }
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+
     int64_t now_ms = esp_timer_get_time() / 1000;
     uint32_t elapsed_s = 0;
     if (state.last_solar_update_ts > 0 && now_ms >= state.last_solar_update_ts) {
@@ -769,7 +771,7 @@ void UIController::render_solar_screen(const SystemState& state)
     else {
         // --- Normal Primary Power Display (y=12..33, font14x22_num) ---
         y_pos = 12;
-        snprintf(buf, sizeof(buf), "%u W", state.solar_power_w_instant);
+        snprintf(buf, sizeof(buf), "%u", state.solar_power_w_instant);
         gfx_.draw_string_centered(y_pos, buf, 1, 0, -1, &font14x22_num);
 
         // --- Metrics Line (y=36): Irradiance (Left) + Temperature (Right) ---
