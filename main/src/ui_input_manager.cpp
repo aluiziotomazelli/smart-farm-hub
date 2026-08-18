@@ -1,6 +1,6 @@
-// main/src/ui_input_manager.cpp
 #include <vector>
 
+#undef LOG_LOCAL_LEVEL
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
 

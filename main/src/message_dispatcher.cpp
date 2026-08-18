@@ -1,8 +1,8 @@
-// main/src/message_dispatcher.cpp
-#include "message_dispatcher.hpp"
-
+#undef LOG_LOCAL_LEVEL
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
+
+#include "message_dispatcher.hpp"
 
 static const char* TAG = "MessageDispatcher";
 

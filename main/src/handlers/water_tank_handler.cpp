@@ -1,8 +1,10 @@
-// main/src/handlers/water_tank_handler.cpp
-#include "handlers/water_tank_handler.hpp"
+#include <cstdint>
 
+#undef LOG_LOCAL_LEVEL
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
+
+#include "handlers/water_tank_handler.hpp"
 
 static const char* TAG = "WaterTankHandler";
 

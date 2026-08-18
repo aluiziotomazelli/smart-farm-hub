@@ -1,8 +1,10 @@
-// main/src/handlers/ota_status_handler.cpp
-#include "handlers/ota_status_handler.hpp"
+#include <cstdint>
 
+#undef LOG_LOCAL_LEVEL
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
+
+#include "handlers/ota_status_handler.hpp"
 
 static const char* TAG = "OtaStatusHandler";
 

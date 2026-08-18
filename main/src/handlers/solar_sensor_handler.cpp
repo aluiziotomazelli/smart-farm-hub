@@ -1,11 +1,12 @@
-// main/src/handlers/solar_sensor_handler.cpp
-#include "handlers/solar_sensor_handler.hpp"
-
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 
+#undef LOG_LOCAL_LEVEL
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
+
+#include "handlers/solar_sensor_handler.hpp"
 
 static const char* TAG = "SolarSensorHandler";
 

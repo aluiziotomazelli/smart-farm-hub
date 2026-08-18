@@ -1,6 +1,6 @@
-// main/src/ui_controller.cpp
 #include <stdio.h>
 
+#undef LOG_LOCAL_LEVEL
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -927,7 +927,7 @@ static ScreenMode get_screen_for_node(farm::NodeId node)
     }
 }
 
-static const char* battery_state_to_string(farm::BatteryState state)
+[[maybe_unused]] static const char* battery_state_to_string(farm::BatteryState state)
 {
     switch (state) {
     case farm::BatteryState::CRITICAL:

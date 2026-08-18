@@ -1,8 +1,10 @@
-// main/src/command_manager.cpp
-#include "command_manager.hpp"
+#include <cstdint>
 
+#undef LOG_LOCAL_LEVEL
 #define LOG_LOCAL_LEVEL ESP_LOG_INFO
 #include "esp_log.h"
+
+#include "command_manager.hpp"
 
 static const char* TAG = "CommandManager";
 
