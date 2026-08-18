@@ -1,11 +1,20 @@
 // main/include/hub_stats.hpp
 #pragma once
-#include <cstdint>
+
 #include <cstddef>
+#include <cstdint>
+
+#include "app_storage.hpp"
 #include "farm_protocol_types.hpp"
 #include "protocol_types.hpp" // espnow::CommandType
 
 static constexpr uint8_t MAX_PENDING_PER_NODE = 4;
+
+// =============================
+//  Hub Storage Constants
+// =============================
+static constexpr uint32_t HUB_STATS_MAGIC = 0x485542; ///< "HUB"
+static constexpr uint8_t HUB_STATS_VERSION = 7;
 
 /**
  * @brief Represents a pending command for a specific node.
@@ -26,14 +35,14 @@ struct PendingNodeCommand
     bool operator!=(const PendingNodeCommand& other) const { return !(*this == other); }
 };
 
+/**
+ * @struct HubStats
+ * @brief Pure domain struct representing statistics and state for the Hub application.
+ *
+ * Contains no storage metadata (magic, version, crc) which are managed by the AppStorage envelope.
+ */
 struct HubStats
 {
-    static constexpr uint32_t MAGIC = 0x485542; // "HUB"
-    static constexpr uint8_t VERSION = 6;
-
-    uint32_t magic = MAGIC;
-    uint8_t version = VERSION;
-
     // User preferences
     uint8_t language = 0; // 0: EN_US, 1: PT_BR
 
@@ -47,15 +56,7 @@ struct HubStats
     // Per-node remote metadata (power profile & fw version, survives reboots via NVS)
     farm::NodeMetadata node_info[farm::MAX_HUB_NODES] = {};
 
-    // CRC MUST BE LAST of the validated fields
-    uint32_t crc = 0;
-
-    void reset()
-    {
-        *this = HubStats{};
-        magic = MAGIC;
-        version = VERSION;
-    }
+    void reset() { *this = HubStats{}; }
 
     bool push_pending(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack)
     {
@@ -182,8 +183,8 @@ struct HubStats
 
     bool operator==(const HubStats& other) const
     {
-        if (magic != other.magic || version != other.version || language != other.language ||
-            messages_received != other.messages_received || commands_sent != other.commands_sent) {
+        if (language != other.language || messages_received != other.messages_received ||
+            commands_sent != other.commands_sent) {
             return false;
         }
 
@@ -206,3 +207,8 @@ struct HubStats
 
     bool operator!=(const HubStats& other) const { return !(*this == other); }
 };
+
+/**
+ * @brief Storage envelope alias used for allocating physical RTC/NVS storage buffers.
+ */
+using HubStorage = StorageEnvelope<HubStats, HUB_STATS_MAGIC, HUB_STATS_VERSION>;

@@ -5,7 +5,6 @@ idf_component_register(
         "src/command_manager.cpp"
         "src/display_manager.cpp"
         "src/hub_app.cpp"
-        "src/hub_nvs.cpp"
         "src/message_dispatcher.cpp"
         "src/handlers/water_tank_handler.cpp"
         "src/handlers/solar_sensor_handler.cpp"

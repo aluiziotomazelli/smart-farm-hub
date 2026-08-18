@@ -68,8 +68,8 @@ static NvsBackend nvs_core_backend{hal_nvs, CORE_NVS_KEY};
 static NvsCore nvs_core{rtc_core_backend, nvs_core_backend};
 
 // Hub Stats NVS
-static RTC_DATA_ATTR HubStats g_rtc_hub_stats;
-static RtcBackend rtc_stats_backend(&g_rtc_hub_stats, sizeof(HubStats));
+static RTC_DATA_ATTR HubStorage g_rtc_hub_stats;
+static RtcBackend rtc_stats_backend(&g_rtc_hub_stats, sizeof(HubStorage));
 static NvsBackend nvs_stats_backend{hal_nvs, STATS_NVS_KEY};
 static HubNvs nvs_hub{rtc_stats_backend, nvs_stats_backend};
 

@@ -5,6 +5,16 @@ All notable changes to the `smart-farm-hub` firmware project will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-18
+
+### Changed
+- Refactored `HubNvs` to inherit from the generic `AppStorage<HubStats, Magic, Version>` CRTP base class in `smart-farm-common`, eliminating local NVS boilerplate and implementation files.
+- Decoupled domain struct `HubStats` from storage metadata (`magic`, `version`, `crc`), wrapping it automatically with the new `StorageEnvelope` pattern.
+- Migrated `CoreStorage` usage in `HubApp` to pure `CoreData` and separated `process_boot_reasons()` from storage initialization.
+- Simplified `init_hub_storage()` and `init_core_storage()` logic utilizing `init_app_data()` / `init()` with automatic fallback to defaults.
+- Updated RTC static memory allocation in `main.cpp` using `HubStorage`.
+- Bumped firmware version to `0.2.0`.
+
 ## [0.1.0] - 2026-07-21
 
 ### Added
