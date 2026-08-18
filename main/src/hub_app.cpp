@@ -126,49 +126,52 @@ esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t app_cmd_queue, 
 
 esp_err_t HubApp::init_core_storage()
 {
-    CoreStorage default_core = {};
+    CoreData default_core = {};
     default_core.reset();
     default_core.node_id = farm::NodeId::HUB;
     default_core.node_type = farm::NodeType::HUB;
     default_core.power_profile = farm::PowerProfile::ALWAYS_ON;
 
-    return core_storage_.init(
-        core_, default_core, hal_system_.reset_reason(), hal_sleep_.get_wakeup_cause(), pending_core_commit_);
+    esp_err_t ret = core_storage_.init(core_, default_core);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize core storage: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    core_storage_.process_boot_reasons(
+        core_, hal_system_.reset_reason(), hal_sleep_.get_wakeup_cause(), pending_core_commit_);
+
+    return ESP_OK;
 }
 
 esp_err_t HubApp::init_hub_storage()
 {
-    esp_err_t ret = hub_storage_.load_app_data(stats_);
+    HubStats default_stats = {};
+    default_stats.reset();
 
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Loaded hub stats from storage (language=%u)", stats_.language);
-        if (stats_.language < static_cast<uint8_t>(Language::COUNT)) {
-            I18n::set_language(static_cast<Language>(stats_.language));
-        }
+    esp_err_t ret = hub_storage_.init_app_data(stats_, default_stats);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize hub storage: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
-        if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
-            for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
-                const auto& info = stats_.node_info[i];
-                if (info.node_id != farm::NodeId::UNKNOWN) {
-                    g_system_state.set_node_power_profile(info.node_id, info.power_profile);
-                    g_system_state.set_node_fw_version(info.node_id, info.fw_major, info.fw_minor, info.fw_patch);
-                }
+    ESP_LOGI(TAG, "Loaded hub stats from storage (language=%u)", stats_.language);
+    if (stats_.language < static_cast<uint8_t>(Language::COUNT)) {
+        I18n::set_language(static_cast<Language>(stats_.language));
+    }
+
+    if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
+        for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
+            const auto& info = stats_.node_info[i];
+            if (info.node_id != farm::NodeId::UNKNOWN) {
+                g_system_state.set_node_power_profile(info.node_id, info.power_profile);
+                g_system_state.set_node_fw_version(info.node_id, info.fw_major, info.fw_minor, info.fw_patch);
             }
-            hal_rtos_.semaphore_give(g_state_mutex);
         }
-
-        return ESP_OK;
+        hal_rtos_.semaphore_give(g_state_mutex);
     }
 
-    ESP_LOGW(TAG, "Hub storage load failed (%s), recreating default storage", esp_err_to_name(ret));
-    stats_.reset();
-    ret = hub_storage_.save_app_data(stats_, /*force_nvs_commit=*/true);
-    if (ret == ESP_OK) {
-        return ESP_OK;
-    }
-
-    ESP_LOGE(TAG, "Failed to initialize tank storage: %s", esp_err_to_name(ret));
-    return ret;
+    return ESP_OK;
 }
 
 void HubApp::log_boot_summary()

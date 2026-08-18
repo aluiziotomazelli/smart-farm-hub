@@ -51,7 +51,7 @@ public:
     HubStats& get_stats() { return stats_; }
 
 protected:
-    CoreStorage core_;
+    CoreData core_;
     HubStats stats_;
 
     bool session_healthy_ = true;

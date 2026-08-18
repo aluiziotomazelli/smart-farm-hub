@@ -2,7 +2,6 @@ idf_component_register(
     SRCS 
         "main.cpp"
         "test_message_dispatcher.cpp"
-        "test_hub_nvs.cpp"
         "test_command_manager.cpp"
         "test_ui_input_manager.cpp"
         "test_ui_controller.cpp"
@@ -13,7 +12,6 @@ idf_component_register(
         "../../../main/src/handlers/water_tank_handler.cpp"
         "../../../main/src/handlers/solar_sensor_handler.cpp"
         "../../../main/src/handlers/ota_status_handler.cpp"
-        "../../../main/src/hub_nvs.cpp"
         "../../../main/src/ui_input_manager.cpp"
         "../../../main/src/ui_controller.cpp"
     INCLUDE_DIRS 
