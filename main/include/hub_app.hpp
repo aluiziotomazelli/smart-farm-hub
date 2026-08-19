@@ -78,7 +78,6 @@ private:
     esp_err_t init_hub_storage();
     esp_err_t init_core_storage();
     esp_err_t init_wifi();
-    esp_err_t connect_wifi_with_retry(uint8_t max_attempts = 2);
     esp_err_t init_espnow(QueueHandle_t rx_queue);
     esp_err_t init_ota_manager();
 

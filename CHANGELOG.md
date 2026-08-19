@@ -5,6 +5,14 @@ All notable changes to the `smart-farm-hub` firmware project will be documented 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-08-18
+
+### Changed
+- Updated `wifi_manager` submodule to v1.3.0.
+- Refactored `HubApp::init_wifi()` to use the native synchronous retry and backoff mechanism in `WiFiManager::connect(CONNECT_WIFI_TIMEOUT_MS, 3, 1500)`.
+- Removed obsolete `HubApp::connect_wifi_with_retry` helper method.
+- Bumped firmware version to `0.2.1`.
+
 ## [0.2.0] - 2026-08-18
 
 ### Changed

@@ -228,35 +228,14 @@ esp_err_t HubApp::init_wifi()
     if (err != ESP_OK)
         return err;
 
-    return connect_wifi_with_retry(4);
-}
-
-esp_err_t HubApp::connect_wifi_with_retry(uint8_t max_attempts)
-{
-    if (wifi_.get_state() == wifi_manager::State::CONNECTED_GOT_IP) {
-        return ESP_OK;
+    ESP_LOGI(TAG, "Connecting to WiFi with sync retries (timeout: %u ms, max_retries: 3)...", CONNECT_WIFI_TIMEOUT_MS);
+    err = wifi_.connect(CONNECT_WIFI_TIMEOUT_MS, 3, 1500);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi connected successfully via WiFiManager::connect");
+    } else {
+        ESP_LOGE(TAG, "WiFi connection failed after retries: %s", esp_err_to_name(err));
     }
 
-    static constexpr uint16_t DELAY_BETWEEN_ATTEMPTS_MS = 1500;
-    esp_err_t err = ESP_FAIL;
-    for (uint8_t attempt = 1; attempt <= max_attempts; ++attempt) {
-        ESP_LOGI(TAG, "Connecting to WiFi (attempt %u/%u)...", attempt, max_attempts);
-        err = wifi_.connect(CONNECT_WIFI_TIMEOUT_MS);
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "WiFi connected successfully");
-            update_wifi_status();
-            return ESP_OK;
-        }
-
-        ESP_LOGW(TAG, "WiFi connection attempt %u failed: %s", attempt, esp_err_to_name(err));
-        if (attempt < max_attempts) {
-            wifi_.disconnect(DISCONNECT_WIFI_TIMEOUT_MS);
-            uint32_t delay_ms = DELAY_BETWEEN_ATTEMPTS_MS * attempt;
-            hal_rtos_.task_delay(pdMS_TO_TICKS(delay_ms));
-        }
-    }
-
-    ESP_LOGE(TAG, "Failed to connect to WiFi after %u attempts: %s", max_attempts, esp_err_to_name(err));
     update_wifi_status();
     return err;
 }
