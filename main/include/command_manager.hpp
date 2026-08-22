@@ -60,6 +60,15 @@ public:
     void check_and_arm_time_sync(farm::NodeId node_id, uint64_t node_unix_time_ms);
 
     /**
+     * @brief Dispatches a tank level update to registered actuator nodes (e.g. PumpController).
+     */
+    esp_err_t broadcast_tank_level(
+        uint8_t tank_id,
+        uint16_t level_permille,
+        bool backup_mode_active,
+        bool float_switch_is_full);
+
+    /**
      * @brief Dispatch a single command over ESP-NOW directly.
      */
     esp_err_t dispatch_single_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack);

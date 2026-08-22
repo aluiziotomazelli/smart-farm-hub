@@ -103,6 +103,9 @@ espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg
         msg.rssi,
         static_cast<unsigned long long>(report.unix_time));
 
+    command_mgr_.broadcast_tank_level(
+        0, report.level_permille, report.backup_mode_active, report.float_switch_is_full);
+
     return espnow::AckStatus::OK;
 }
 

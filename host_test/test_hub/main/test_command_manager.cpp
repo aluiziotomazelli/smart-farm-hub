@@ -125,3 +125,20 @@ TEST_F(CommandManagerTest, AutoTimeSync_ArmsTimeSyncWhenClockDriftExceedsThresho
     EXPECT_FALSE(stats_.has_pending(target_node));
     EXPECT_EQ(stats_.commands_sent, 1);
 }
+
+TEST_F(CommandManagerTest, BroadcastTankLevel_SendsPayloadToPumpControl)
+{
+    hub::CommandManager sut(mock_espnow_, stats_, hub_storage_, mock_time_, state_, dummy_mutex_, mock_rtos_);
+
+    EXPECT_CALL(
+        mock_espnow_,
+        send_data(
+            static_cast<uint8_t>(farm::NodeId::PUMP_CONTROL),
+            static_cast<uint8_t>(farm::PayloadType::TANK_LEVEL_UPDATE),
+            _,
+            sizeof(farm::TankLevelUpdate),
+            false))
+        .WillOnce(Return(ESP_OK));
+
+    EXPECT_EQ(sut.broadcast_tank_level(0, 750, false, false), ESP_OK);
+}
