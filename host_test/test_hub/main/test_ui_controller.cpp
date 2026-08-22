@@ -146,3 +146,45 @@ TEST_F(UIControllerTest, PumpScreen_Render_DrawsHeaderStatusAndIndicators)
 
     sut.render_pump_screen(state);
 }
+
+TEST_F(UIControllerTest, PumpSubmenu_LastReport_EntersPumpLastReportScreenAndReturnsOnBack)
+{
+    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
+    sut.set_screen_mode(ScreenMode::NODE_SUBMENU);
+    sut.set_active_node(farm::NodeId::PUMP_CONTROL);
+
+    UiEvent confirm_ev{UiEventType::CONFIRM, 0};
+    sut.handle_event(confirm_ev);
+
+    EXPECT_EQ(sut.get_screen_mode(), ScreenMode::PUMP_LAST_REPORT_SCREEN);
+
+    UiEvent back_ev{UiEventType::BACK, 0};
+    sut.handle_event(back_ev);
+
+    EXPECT_EQ(sut.get_screen_mode(), ScreenMode::NODE_SUBMENU);
+}
+
+TEST_F(UIControllerTest, PumpLastReportScreen_Render_DrawsAllRows)
+{
+    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
+    SystemState state;
+    auto& pump = state.load(LoadIndex::PUMP);
+    pump.node_id = farm::NodeId::PUMP_CONTROL;
+    pump.load_state = farm::LoadState::RUNNING;
+    pump.control_mode = farm::ControlMode::AUTO;
+    pump.active_source = farm::PowerSource::SOLAR;
+    pump.power_w = 1500;
+    pump.runtime_s = 4530; // 1h 15m 30s
+    pump.circuit_id = 0;
+    pump.uptime_s = 307200; // 3d 13h
+    pump.unix_time = 1724345678000ULL;
+    pump.last_update_ts = 1000;
+
+    EXPECT_CALL(mock_gfx_, get_width()).WillRepeatedly(Return(128));
+    EXPECT_CALL(mock_gfx_, get_string_width(_, _)).WillRepeatedly(Return(24));
+    EXPECT_CALL(mock_gfx_, draw_string_centered(0, _, 1, 0, -1, nullptr, false)).Times(::testing::AtLeast(1));
+    EXPECT_CALL(mock_gfx_, draw_hline(0, 8, 128, 1)).Times(::testing::AtLeast(1));
+    EXPECT_CALL(mock_gfx_, draw_string(_, _, _, 1, nullptr, _)).Times(::testing::AtLeast(8));
+
+    sut.render_pump_last_report_screen(state);
+}

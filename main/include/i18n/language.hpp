@@ -69,17 +69,18 @@ enum class StrId : uint8_t
     SOLAR_LABEL_NIGHT,      ///< Night mode label
 
     // Pump Screen
-    HEADER_PUMP,    ///< Water pump screen header
-    LABEL_AUTO,     ///< Auto mode label
-    LABEL_LOCK,     ///< Source locked mode label
-    LABEL_MAN,      ///< Manual mode label
-    LABEL_SOLAR,    ///< Solar power source label
-    LABEL_GRID,     ///< Grid power source label
-    LABEL_RUNTIME,  ///< Runtime label
-    STATUS_RUNNING, ///< Pump running status text
-    STATUS_IDLE,    ///< Pump idle status text
-    STATUS_TIMEOUT, ///< Pump timeout status text
-    STATUS_FAULT,   ///< Pump fault status text
+    HEADER_PUMP,        ///< Water pump screen header
+    HEADER_PUMP_REPORT, ///< Last report screen header for water pump
+    LABEL_AUTO,         ///< Auto mode label
+    LABEL_LOCK,         ///< Source locked mode label
+    LABEL_MAN,          ///< Manual mode label
+    LABEL_SOLAR,        ///< Solar power source label
+    LABEL_GRID,         ///< Grid power source label
+    LABEL_RUNTIME,      ///< Runtime label
+    STATUS_RUNNING,     ///< Pump running status text
+    STATUS_IDLE,        ///< Pump idle status text
+    STATUS_TIMEOUT,     ///< Pump timeout status text
+    STATUS_FAULT,       ///< Pump fault status text
 
     COUNT ///< Sentinel value representing total number of localized strings
 };

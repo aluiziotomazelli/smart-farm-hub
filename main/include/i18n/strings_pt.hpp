@@ -38,6 +38,7 @@ inline constexpr const char* STRINGS_PT[static_cast<size_t>(StrId::COUNT)] = {
     "Producao",             // SOLAR_LABEL_YIELD
     "NOITE",                // SOLAR_LABEL_NIGHT
     "BOMBA D'AGUA",         // HEADER_PUMP
+    "[BOMBA] ULT. REPORT",  // HEADER_PUMP_REPORT
     "Auto",                 // LABEL_AUTO
     "Trav",                 // LABEL_LOCK
     "Man",                  // LABEL_MAN

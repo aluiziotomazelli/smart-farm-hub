@@ -19,6 +19,7 @@ static const char* TAG = "UIController";
 // Forward declarations for helpers
 static void format_compact_num(char* buf, size_t buf_size, uint32_t val);
 static void format_elapsed_time(char* buf, size_t buf_size, int64_t last_update_ts);
+static void format_dynamic_uptime(char* buf, size_t buf_size, uint32_t uptime_s);
 static const char* sensor_status_to_string(farm::SensorStatus status);
 static const char* battery_state_to_string(farm::BatteryState state);
 static ScreenMode get_screen_for_node(farm::NodeId node);
@@ -125,6 +126,10 @@ void UIController::handle_event(const UiEvent& event)
                     current_screen_ = ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN;
                     ESP_LOGI(TAG, "Entered SOLAR_SENSOR_LAST_REPORT_SCREEN");
                 }
+                else if (active_node_ == farm::NodeId::PUMP_CONTROL) {
+                    current_screen_ = ScreenMode::PUMP_LAST_REPORT_SCREEN;
+                    ESP_LOGI(TAG, "Entered PUMP_LAST_REPORT_SCREEN");
+                }
                 else {
                     current_screen_ = get_screen_for_node(active_node_);
                 }
@@ -172,7 +177,8 @@ void UIController::handle_event(const UiEvent& event)
         else if (
             current_screen_ == ScreenMode::NODE_STATS_SCREEN || current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
             current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN ||
-            current_screen_ == ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN) {
+            current_screen_ == ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN ||
+            current_screen_ == ScreenMode::PUMP_LAST_REPORT_SCREEN) {
             current_screen_ = ScreenMode::NODE_SUBMENU;
         }
         else if (current_screen_ == ScreenMode::SETTINGS_SCREEN) {
@@ -211,7 +217,8 @@ void UIController::handle_event(const UiEvent& event)
         else if (
             current_screen_ == ScreenMode::NODE_STATS_SCREEN || current_screen_ == ScreenMode::NODE_INFO_SCREEN ||
             current_screen_ == ScreenMode::WATER_TANK_LAST_REPORT_SCREEN ||
-            current_screen_ == ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN) {
+            current_screen_ == ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN ||
+            current_screen_ == ScreenMode::PUMP_LAST_REPORT_SCREEN) {
             current_screen_ = ScreenMode::NODE_SUBMENU;
         }
         else {
@@ -260,6 +267,9 @@ void UIController::render_current_screen(const SystemState& state)
         break;
     case ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN:
         render_solar_sensor_last_report_screen(state);
+        break;
+    case ScreenMode::PUMP_LAST_REPORT_SCREEN:
+        render_pump_last_report_screen(state);
         break;
     case ScreenMode::SOLAR_SCREEN:
         render_solar_screen(state);
@@ -445,9 +455,11 @@ void UIController::render_pump_screen(const SystemState& state)
     uint8_t y_pos = 0;
 
     // --- Header (y=0..7) ---
+    // Wifi hub status
     draw_wifi_signal_icon(0, y_pos, state.wifi_connected, state.wifi_rssi);
+    // Pump header text
     gfx_.draw_string_centered(y_pos, I18n::get(StrId::HEADER_PUMP), 1, 24, 128 - 24);
-
+    // ESP-NOW node pump status
     bool is_online = false;
     int8_t rssi = 0;
     if (espnow_ != nullptr) {
@@ -458,6 +470,7 @@ void UIController::render_pump_screen(const SystemState& state)
         }
     }
     draw_wifi_signal_icon(gfx_.get_width() - 12, 0, is_online, rssi);
+    // Divider
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
 
     const auto& pump = state.load(LoadIndex::PUMP);
@@ -886,6 +899,110 @@ void UIController::render_solar_sensor_last_report_screen(const SystemState& sta
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 }
 
+void UIController::render_pump_last_report_screen(const SystemState& state)
+{
+    gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_PUMP_REPORT), 1);
+    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+
+    char left_buf[32];
+    char right_buf[32];
+    uint8_t collumn_a_x_pos = 0;
+    uint8_t collumn_b_x_pos = 64;
+
+    uint8_t inter_line_space = 11;
+    uint8_t y_pos = 12;
+
+    const auto& pump = state.load(LoadIndex::PUMP);
+
+    // --- Line 1: Status (Left) + Power W (Right) ---
+    const char* status_str = I18n::get(StrId::STATUS_IDLE);
+    if (pump.load_state == farm::LoadState::RUNNING) {
+        status_str = I18n::get(StrId::STATUS_RUNNING);
+    }
+    else if (pump.load_state == farm::LoadState::ERROR_TIMEOUT) {
+        status_str = I18n::get(StrId::STATUS_TIMEOUT);
+    }
+    else if (
+        pump.load_state == farm::LoadState::ERROR_NO_SOURCE ||
+        pump.load_state == farm::LoadState::ERROR_CONTACTOR_STUCK) {
+        status_str = I18n::get(StrId::STATUS_FAULT);
+    }
+    snprintf(left_buf, sizeof(left_buf), "%s", status_str);
+    snprintf(right_buf, sizeof(right_buf), "%uW", pump.power_w);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+
+    uint8_t str_w = gfx_.get_string_width(right_buf);
+    gfx_.draw_string(gfx_.get_width() - str_w, y_pos, right_buf, 1);
+
+    // --- Line 2: Mode (Left) + Source (Right) ---
+    y_pos += inter_line_space;
+    const char* mode_str = "UNK";
+    switch (pump.control_mode) {
+    case farm::ControlMode::AUTO:
+        mode_str = I18n::get(StrId::LABEL_AUTO);
+        break;
+    case farm::ControlMode::SOURCE_LOCKED:
+    case farm::ControlMode::STOP_OVERRIDE:
+        mode_str = I18n::get(StrId::LABEL_LOCK);
+        break;
+        break;
+    case farm::ControlMode::FULL_MANUAL:
+        mode_str = I18n::get(StrId::LABEL_MAN);
+        break;
+    default:
+        break;
+    }
+    const char* src_str = (pump.active_source == farm::PowerSource::SOLAR)  ? I18n::get(StrId::LABEL_SOLAR)
+                          : (pump.active_source == farm::PowerSource::GRID) ? I18n::get(StrId::LABEL_GRID)
+                                                                            : " ";
+    snprintf(left_buf, sizeof(left_buf), "Mode:%s", mode_str);
+    snprintf(right_buf, sizeof(right_buf), "%s", src_str);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+
+    str_w = gfx_.get_string_width(right_buf);
+    gfx_.draw_string(gfx_.get_width() - str_w, y_pos, right_buf, 1);
+
+    // --- Line 3: Runtime (Left) + Circuit ID (Right) ---
+    y_pos += inter_line_space;
+    uint32_t runtime_s = pump.runtime_s;
+    if (runtime_s > 0) {
+        uint32_t hours = runtime_s / 3600;
+        uint32_t mins = (runtime_s % 3600) / 60;
+        uint32_t secs = runtime_s % 60;
+        snprintf(
+            left_buf,
+            sizeof(left_buf),
+            "%02lu:%02lu:%02lu",
+            static_cast<unsigned long>(hours),
+            static_cast<unsigned long>(mins),
+            static_cast<unsigned long>(secs));
+    }
+    else {
+        snprintf(left_buf, sizeof(left_buf), "--:--:--");
+    }
+    snprintf(right_buf, sizeof(right_buf), "Ckt: %u", pump.circuit_id);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+
+    str_w = gfx_.get_string_width(right_buf);
+    gfx_.draw_string(gfx_.get_width() - str_w, y_pos, right_buf, 1);
+
+    // --- Line 4: Uptime (Left) + Age MM:SS (Right-aligned) ---
+    y_pos += inter_line_space;
+    char up_buf[16];
+    format_dynamic_uptime(up_buf, sizeof(up_buf), pump.uptime_s);
+    snprintf(left_buf, sizeof(left_buf), "Up: %s", up_buf);
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+
+    format_elapsed_time(right_buf, sizeof(right_buf), pump.last_update_ts);
+    int age_w = gfx_.get_string_width(right_buf);
+    gfx_.draw_string(gfx_.get_width() - age_w, y_pos, right_buf, 1);
+
+    // --- Line 5: Raw Unix Timestamp ---
+    y_pos += inter_line_space;
+    snprintf(left_buf, sizeof(left_buf), "T: %llu", static_cast<unsigned long long>(pump.unix_time / 1000));
+    gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
+}
+
 void UIController::render_solar_screen(const SystemState& state)
 {
     char buf[64];
@@ -1067,6 +1184,36 @@ static void format_elapsed_time(char* buf, size_t buf_size, int64_t last_update_
     uint32_t mm = elapsed_s / 60;
     uint32_t ss = elapsed_s % 60;
     snprintf(buf, buf_size, "%02lu:%02lu", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+}
+
+static void format_dynamic_uptime(char* buf, size_t buf_size, uint32_t uptime_s)
+{
+    if (!buf || buf_size == 0)
+        return;
+
+    if (uptime_s < 60) {
+        snprintf(buf, buf_size, "%lus", static_cast<unsigned long>(uptime_s));
+    }
+    else if (uptime_s < 3600) {
+        uint32_t mm = uptime_s / 60;
+        uint32_t ss = uptime_s % 60;
+        snprintf(buf, buf_size, "%lum %lus", static_cast<unsigned long>(mm), static_cast<unsigned long>(ss));
+    }
+    else if (uptime_s < 86400) {
+        uint32_t hh = uptime_s / 3600;
+        uint32_t mm = (uptime_s % 3600) / 60;
+        snprintf(buf, buf_size, "%luh %lum", static_cast<unsigned long>(hh), static_cast<unsigned long>(mm));
+    }
+    else if (uptime_s < 2592000) { // < 30 days
+        uint32_t dd = uptime_s / 86400;
+        uint32_t hh = (uptime_s % 86400) / 3600;
+        snprintf(buf, buf_size, "%lud %luh", static_cast<unsigned long>(dd), static_cast<unsigned long>(hh));
+    }
+    else { // >= 30 days
+        uint32_t months = uptime_s / 2592000;
+        uint32_t dd = (uptime_s % 2592000) / 86400;
+        snprintf(buf, buf_size, "%lum %lud", static_cast<unsigned long>(months), static_cast<unsigned long>(dd));
+    }
 }
 
 static const char* get_node_name(farm::NodeId node)
