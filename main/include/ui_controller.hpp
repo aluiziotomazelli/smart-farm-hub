@@ -14,6 +14,7 @@ enum class ScreenMode
 {
     MAIN_SCREEN,
     WATER_TANK_SCREEN,
+    PUMP_SCREEN,
     SOLAR_SCREEN,
     LOADS_SCREEN,
     STATS_SCREEN,
@@ -51,6 +52,7 @@ public:
     void render_settings_screen();
     void render_boot_screen();
     void render_water_tank_screen(const SystemState& state);
+    void render_pump_screen(const SystemState& state);
     void render_water_tank_last_report_screen(const SystemState& state);
     void render_solar_sensor_last_report_screen(const SystemState& state);
     void render_node_submenu(const SystemState& state);

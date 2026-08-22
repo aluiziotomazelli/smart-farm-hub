@@ -42,6 +42,9 @@ void UIController::handle_event(const UiEvent& event)
             current_screen_ = ScreenMode::WATER_TANK_SCREEN;
         }
         else if (current_screen_ == ScreenMode::WATER_TANK_SCREEN) {
+            current_screen_ = ScreenMode::PUMP_SCREEN;
+        }
+        else if (current_screen_ == ScreenMode::PUMP_SCREEN) {
             current_screen_ = ScreenMode::SOLAR_SCREEN;
         }
         else if (current_screen_ == ScreenMode::SOLAR_SCREEN) {
@@ -77,6 +80,9 @@ void UIController::handle_event(const UiEvent& event)
             current_screen_ = ScreenMode::SOLAR_SCREEN;
         }
         else if (current_screen_ == ScreenMode::SOLAR_SCREEN) {
+            current_screen_ = ScreenMode::PUMP_SCREEN;
+        }
+        else if (current_screen_ == ScreenMode::PUMP_SCREEN) {
             current_screen_ = ScreenMode::WATER_TANK_SCREEN;
         }
         else if (current_screen_ == ScreenMode::WATER_TANK_SCREEN) {
@@ -93,6 +99,12 @@ void UIController::handle_event(const UiEvent& event)
             submenu_index_ = 0;
             ESP_LOGI(TAG, "Entered NODE_SUBMENU for WATER_TANK");
         }
+        else if (current_screen_ == ScreenMode::PUMP_SCREEN) {
+            active_node_ = farm::NodeId::PUMP_CONTROL;
+            current_screen_ = ScreenMode::NODE_SUBMENU;
+            submenu_index_ = 0;
+            ESP_LOGI(TAG, "Entered NODE_SUBMENU for PUMP_CONTROL");
+        }
         else if (current_screen_ == ScreenMode::SOLAR_SCREEN) {
             active_node_ = farm::NodeId::SOLAR_SENSOR;
             current_screen_ = ScreenMode::NODE_SUBMENU;
@@ -100,10 +112,7 @@ void UIController::handle_event(const UiEvent& event)
             ESP_LOGI(TAG, "Entered NODE_SUBMENU for SOLAR_SENSOR");
         }
         else if (current_screen_ == ScreenMode::LOADS_SCREEN) {
-            active_node_ = farm::NodeId::PUMP_CONTROL;
-            current_screen_ = ScreenMode::NODE_SUBMENU;
-            submenu_index_ = 0;
-            ESP_LOGI(TAG, "Entered NODE_SUBMENU for PUMP_CONTROL");
+            // General loads overview screen
         }
         else if (current_screen_ == ScreenMode::NODE_SUBMENU) {
             switch (static_cast<SubmenuItem>(submenu_index_)) {
@@ -233,6 +242,9 @@ void UIController::render_current_screen(const SystemState& state)
         break;
     case ScreenMode::WATER_TANK_SCREEN:
         render_water_tank_screen(state);
+        break;
+    case ScreenMode::PUMP_SCREEN:
+        render_pump_screen(state);
         break;
     case ScreenMode::NODE_SUBMENU:
         render_node_submenu(state);
@@ -425,6 +437,150 @@ void UIController::render_water_tank_screen(const SystemState& state)
     else {
         gfx_.draw_rect(square_x, y_pos, 7, 7, 1);
     }
+}
+
+void UIController::render_pump_screen(const SystemState& state)
+{
+    char buf[64];
+    uint8_t y_pos = 0;
+
+    // --- Header (y=0..7) ---
+    draw_wifi_signal_icon(0, y_pos, state.wifi_connected, state.wifi_rssi);
+    gfx_.draw_string_centered(y_pos, I18n::get(StrId::HEADER_PUMP), 1, 24, 128 - 24);
+
+    bool is_online = false;
+    int8_t rssi = 0;
+    if (espnow_ != nullptr) {
+        is_online = espnow_->is_peer_online(static_cast<espnow::NodeId>(farm::NodeId::PUMP_CONTROL));
+        espnow::PeerStatistics stats{};
+        if (espnow_->get_peer_stats(static_cast<espnow::NodeId>(farm::NodeId::PUMP_CONTROL), stats) == ESP_OK) {
+            rssi = stats.rssi_last;
+        }
+    }
+    draw_wifi_signal_icon(gfx_.get_width() - 12, 0, is_online, rssi);
+    gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
+
+    const auto& pump = state.load(LoadIndex::PUMP);
+
+    // --- Main Status (y=16) ---
+    const char* status_str = I18n::get(StrId::STATUS_IDLE);
+    if (pump.load_state == farm::LoadState::RUNNING) {
+        status_str = I18n::get(StrId::STATUS_RUNNING);
+    }
+    else if (pump.load_state == farm::LoadState::ERROR_TIMEOUT) {
+        status_str = I18n::get(StrId::STATUS_TIMEOUT);
+    }
+    else if (
+        pump.load_state == farm::LoadState::ERROR_NO_SOURCE ||
+        pump.load_state == farm::LoadState::ERROR_CONTACTOR_STUCK) {
+        status_str = I18n::get(StrId::STATUS_FAULT);
+    }
+
+    if (pump.load_state == farm::LoadState::RUNNING && pump.power_w > 0) {
+        snprintf(buf, sizeof(buf), "%s (%uW)", status_str, pump.power_w);
+    }
+    else {
+        snprintf(buf, sizeof(buf), "%s", status_str);
+    }
+    gfx_.draw_string_centered(16, buf, 1);
+
+    // --- Line 1 (y=32): Mode Indicators (Auto:[ ]  Lock:[ ]  Man:[ ]) ---
+    y_pos = 32;
+    bool is_auto = (pump.control_mode == farm::ControlMode::AUTO);
+    bool is_lock = (pump.control_mode == farm::ControlMode::SOURCE_LOCKED);
+    bool is_man =
+        (pump.control_mode == farm::ControlMode::STOP_OVERRIDE || pump.control_mode == farm::ControlMode::FULL_MANUAL);
+
+    // Auto (Left at x=0)
+    snprintf(buf, sizeof(buf), "%s", I18n::get(StrId::LABEL_AUTO));
+    int auto_w = gfx_.get_string_width(buf);
+    gfx_.draw_string(0, y_pos, buf, 1);
+    if (is_auto) {
+        gfx_.fill_rect(auto_w + 2, y_pos, 7, 7, 1);
+    }
+    else {
+        gfx_.draw_rect(auto_w + 2, y_pos, 7, 7, 1);
+    }
+
+    // Lock / Trav (Center at x=50)
+    snprintf(buf, sizeof(buf), "%s", I18n::get(StrId::LABEL_LOCK));
+    int lock_w = gfx_.get_string_width(buf);
+    int lock_x = 50;
+    gfx_.draw_string(lock_x, y_pos, buf, 1);
+    if (is_lock) {
+        gfx_.fill_rect(lock_x + lock_w + 2, y_pos, 7, 7, 1);
+    }
+    else {
+        gfx_.draw_rect(lock_x + lock_w + 2, y_pos, 7, 7, 1);
+    }
+
+    // Man (Right aligned)
+    snprintf(buf, sizeof(buf), "%s", I18n::get(StrId::LABEL_MAN));
+    int man_w = gfx_.get_string_width(buf);
+    int square_x = gfx_.get_width() - 7;
+    int text_x = square_x - 2 - man_w;
+    gfx_.draw_string(text_x, y_pos, buf, 1);
+    if (is_man) {
+        gfx_.fill_rect(square_x, y_pos, 7, 7, 1);
+    }
+    else {
+        gfx_.draw_rect(square_x, y_pos, 7, 7, 1);
+    }
+
+    // --- Line 2 (y=43): Source Indicators (Solar:[ ]  rid:[ ]) ---
+    y_pos = 43;
+    bool is_solar = (pump.active_source == farm::PowerSource::SOLAR);
+    bool is_grid = (pump.active_source == farm::PowerSource::GRID);
+
+    // Solar (Left at x=0)
+    snprintf(buf, sizeof(buf), "%s", I18n::get(StrId::LABEL_SOLAR));
+    int sol_w = gfx_.get_string_width(buf);
+    gfx_.draw_string(0, y_pos, buf, 1);
+    if (is_solar) {
+        gfx_.fill_rect(sol_w + 2, y_pos, 7, 7, 1);
+    }
+    else {
+        gfx_.draw_rect(sol_w + 2, y_pos, 7, 7, 1);
+    }
+
+    // Grid  (Right aligned)
+    snprintf(buf, sizeof(buf), "%s", I18n::get(StrId::LABEL_GRID));
+    int grid_w = gfx_.get_string_width(buf);
+    square_x = gfx_.get_width() - 7;
+    text_x = square_x - 2 - grid_w;
+    gfx_.draw_string(text_x, y_pos, buf, 1);
+    if (is_grid) {
+        gfx_.fill_rect(square_x, y_pos, 7, 7, 1);
+    }
+    else {
+        gfx_.draw_rect(square_x, y_pos, 7, 7, 1);
+    }
+
+    // --- Line 3 (y=54): Runtime & Age ---
+    y_pos = 54;
+    uint32_t runtime_s = pump.runtime_s;
+    if (runtime_s > 0) {
+        uint32_t hours = runtime_s / 3600;
+        uint32_t mins = (runtime_s % 3600) / 60;
+        uint32_t secs = runtime_s % 60;
+        snprintf(
+            buf,
+            sizeof(buf),
+            "%s: %02lu:%02lu:%02lu",
+            I18n::get(StrId::LABEL_RUNTIME),
+            static_cast<unsigned long>(hours),
+            static_cast<unsigned long>(mins),
+            static_cast<unsigned long>(secs));
+    }
+    else {
+        snprintf(buf, sizeof(buf), "%s: --:--:--", I18n::get(StrId::LABEL_RUNTIME));
+    }
+    gfx_.draw_string(0, y_pos, buf, 1);
+
+    char time_buf[16];
+    format_elapsed_time(time_buf, sizeof(time_buf), pump.last_update_ts);
+    int time_w = gfx_.get_string_width(time_buf);
+    gfx_.draw_string(gfx_.get_width() - time_w, y_pos, time_buf, 1);
 }
 
 void UIController::render_node_submenu(const SystemState& state)
@@ -921,7 +1077,7 @@ static const char* get_node_name(farm::NodeId node)
     case farm::NodeId::SOLAR_SENSOR:
         return I18n::get(StrId::HEADER_SOLAR);
     case farm::NodeId::PUMP_CONTROL:
-        return I18n::get(StrId::HEADER_LOADS);
+        return I18n::get(StrId::HEADER_PUMP);
     default:
         return "NODE";
     }
@@ -932,10 +1088,10 @@ static ScreenMode get_screen_for_node(farm::NodeId node)
     switch (node) {
     case farm::NodeId::WATER_TANK:
         return ScreenMode::WATER_TANK_SCREEN;
+    case farm::NodeId::PUMP_CONTROL:
+        return ScreenMode::PUMP_SCREEN;
     case farm::NodeId::SOLAR_SENSOR:
         return ScreenMode::SOLAR_SCREEN;
-    case farm::NodeId::PUMP_CONTROL:
-        return ScreenMode::LOADS_SCREEN;
     default:
         return ScreenMode::WATER_TANK_SCREEN;
     }

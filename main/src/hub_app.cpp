@@ -229,10 +229,12 @@ esp_err_t HubApp::init_wifi()
         return err;
 
     ESP_LOGI(TAG, "Connecting to WiFi with sync retries (timeout: %u ms, max_retries: 3)...", CONNECT_WIFI_TIMEOUT_MS);
-    err = wifi_.connect(CONNECT_WIFI_TIMEOUT_MS, 3, 1500);
+    // err = wifi_.connect(CONNECT_WIFI_TIMEOUT_MS, 3, 1500);
+    err = wifi_.connect();
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "WiFi connected successfully via WiFiManager::connect");
-    } else {
+    }
+    else {
         ESP_LOGE(TAG, "WiFi connection failed after retries: %s", esp_err_to_name(err));
     }
 

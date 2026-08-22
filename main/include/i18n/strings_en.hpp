@@ -37,4 +37,15 @@ inline constexpr const char* STRINGS_EN[static_cast<size_t>(StrId::COUNT)] = {
     "Panel Temp",        // SOLAR_LABEL_TEMP
     "Yield",             // SOLAR_LABEL_YIELD
     "NIGHT",             // SOLAR_LABEL_NIGHT
+    "WATER PUMP",        // HEADER_PUMP
+    "Auto",              // LABEL_AUTO
+    "Lock",              // LABEL_LOCK
+    "Man",               // LABEL_MAN
+    "Solar",             // LABEL_SOLAR
+    "Grid",              // LABEL_GRID
+    "Time",              // LABEL_RUNTIME
+    "RUNNING",           // STATUS_RUNNING
+    "IDLE",              // STATUS_IDLE
+    "TIMEOUT",           // STATUS_TIMEOUT
+    "FAULT",             // STATUS_FAULT
 };
