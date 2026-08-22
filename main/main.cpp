@@ -20,6 +20,7 @@
 #include "command_manager.hpp"
 #include "display_manager.hpp"
 #include "espnow_manager.hpp"
+#include "handlers/load_control_handler.hpp"
 #include "handlers/ota_status_handler.hpp"
 #include "handlers/solar_sensor_handler.hpp"
 #include "handlers/water_tank_handler.hpp"
@@ -170,6 +171,8 @@ extern "C" void app_main()
         g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos);
     static hub::SolarSensorHandler solar_sensor_handler(
         g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos, solar_events);
+    static hub::LoadControlHandler load_control_handler(
+        g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos);
     static hub::OtaStatusHandler ota_status_handler(
         [&app](uint8_t node_id, uint8_t major, uint8_t minor, uint8_t patch) {
             app.on_node_version_received(node_id, major, minor, patch);
@@ -177,6 +180,7 @@ extern "C" void app_main()
 
     msg_dispatcher.register_handler(farm::PayloadType::WATER_LEVEL_REPORT, &water_tank_handler);
     msg_dispatcher.register_handler(farm::PayloadType::SOLAR_SENSOR_REPORT, &solar_sensor_handler);
+    msg_dispatcher.register_handler(farm::PayloadType::LOAD_CONTROL_STATUS, &load_control_handler);
     msg_dispatcher.register_handler(farm::PayloadType::OTA_STATUS_REPORT, &ota_status_handler);
 
     if (msg_dispatcher.start() != ESP_OK) {

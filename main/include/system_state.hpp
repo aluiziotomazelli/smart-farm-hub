@@ -107,6 +107,32 @@ struct SystemState
     LoadState& load(LoadIndex idx) { return loads[static_cast<uint8_t>(idx)]; }
     const LoadState& load(LoadIndex idx) const { return loads[static_cast<uint8_t>(idx)]; }
 
+    LoadState* find_or_allocate_load(farm::NodeId node_id, uint8_t circuit_id)
+    {
+        if (node_id == farm::NodeId::PUMP_CONTROL && circuit_id == 0) {
+            auto& l = load(LoadIndex::PUMP);
+            l.node_id = node_id;
+            l.circuit_id = circuit_id;
+            return &l;
+        }
+
+        for (auto& l : loads) {
+            if (l.node_id == node_id && l.circuit_id == circuit_id) {
+                return &l;
+            }
+        }
+
+        for (auto& l : loads) {
+            if (l.node_id == farm::NodeId::UNKNOWN) {
+                l.node_id = node_id;
+                l.circuit_id = circuit_id;
+                return &l;
+            }
+        }
+
+        return nullptr;
+    }
+
     // ─── Wi-Fi / Network ─────────────────────────────────────────────
     bool wifi_connected = false;
     int8_t wifi_rssi = 0;
@@ -124,7 +150,7 @@ struct SystemState
     {
         uint16_t total = 0;
         for (const auto& l : loads) {
-            if (l.control_mode != farm::ControlMode::OFF && l.active_source == farm::PowerSource::SOLAR) {
+            if (l.load_state == farm::LoadState::RUNNING && l.active_source == farm::PowerSource::SOLAR) {
                 total += l.power_w;
             }
         }

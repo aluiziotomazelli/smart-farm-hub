@@ -7,10 +7,12 @@ idf_component_register(
         "test_ui_controller.cpp"
         "test_solar_power_estimator.cpp"
         "test_solar_sensor_handler.cpp"
+        "test_load_control_handler.cpp"
         "../../../main/src/command_manager.cpp"
         "../../../main/src/message_dispatcher.cpp"
         "../../../main/src/handlers/water_tank_handler.cpp"
         "../../../main/src/handlers/solar_sensor_handler.cpp"
+        "../../../main/src/handlers/load_control_handler.cpp"
         "../../../main/src/handlers/ota_status_handler.cpp"
         "../../../main/src/ui_input_manager.cpp"
         "../../../main/src/ui_controller.cpp"
@@ -21,7 +23,10 @@ idf_component_register(
         "../../../components/idf_hals/mocks"
         "../../../components/display_gfx/include"
         "../../../components/display_gfx/host_test/common"
-        "../../mocks"
+        "../../../components/smart-farm-common/host_test/common"
+        "../../../components/ui_inputs/host_test/common"
+        "../../../components/espnow_manager/include/mocks"
+        "../../../components/time_manager/host_test/mocks"
     REQUIRES 
         gtest
         smart-farm-common

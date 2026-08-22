@@ -811,9 +811,23 @@ void UIController::render_loads_screen(const SystemState& state)
     gfx_.draw_string(0, 26, buf, 1);
 
     const auto& pump = state.load(LoadIndex::PUMP);
-    const char* mode_str = (pump.control_mode == farm::ControlMode::AUTO)     ? "AUTO"
-                           : (pump.control_mode == farm::ControlMode::MANUAL) ? "MAN"
-                                                                              : "OFF";
+    const char* mode_str = "UNK";
+    switch (pump.control_mode) {
+    case farm::ControlMode::AUTO:
+        mode_str = "AUTO";
+        break;
+    case farm::ControlMode::SOURCE_LOCKED:
+        mode_str = "LOCK";
+        break;
+    case farm::ControlMode::STOP_OVERRIDE:
+        mode_str = "STOP";
+        break;
+    case farm::ControlMode::FULL_MANUAL:
+        mode_str = "MAN";
+        break;
+    default:
+        break;
+    }
     const char* src_str = (pump.active_source == farm::PowerSource::SOLAR)  ? "SOLAR"
                           : (pump.active_source == farm::PowerSource::GRID) ? "GRID"
                                                                             : "UNK";
