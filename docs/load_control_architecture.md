@@ -155,18 +155,19 @@ LCT rebalances: 650W surplus detected → activates pending FillRequest on solar
 
 ---
 
-### 5.3 FillRequest — The TC→LCT Interface
+### 5.3 TC→LCT Interface — Pump LoadIntent
 
-TC communicates its fill intention via a `FillRequest` struct. The LCT never reads tank levels
-or does any fill duration math itself.
+TC communicates its fill intention via the standard `LoadIntent` struct. The LCT never reads
+tank levels or calculates fill duration math itself.
 
 ```
-FillRequest {
-    urgency:               OPPORTUNISTIC | NORMAL | URGENT
-    source_preference:     SOLAR_ONLY | SOLAR_PREFERRED | ANY
-    estimated_duration_s:  uint32_t  (calculated by TC)
-    target_level_pct:      uint8_t   (for LCT to know when to stop on TC signal)
-}
+LoadIntent (emitted by TankController):
+    load_index:               LoadIndex::PUMP
+    desired_state:            ON | OFF
+    source_preference:        SOLAR_ONLY | SOLAR_PREFERRED | ANY
+    urgency:                  OPPORTUNISTIC | NORMAL | URGENT
+    max_hold_duration_s:      0
+    estimated_on_duration_s:  uint32_t  (calculated by TC: volume / flow_rate + margin)
 ```
 
 TC may escalate urgency as level continues to drop between fill cycles:
@@ -465,7 +466,7 @@ sensor values or applies per-load policy logic itself.
 
 | Controller | Today (no sensor) | With sensor |
 |---|---|---|
-| `TankController` | Level from telemetry → FillRequest | Same, extended with flow-rate learning |
+| `TankController` | Level from telemetry → dynamic `LoadIntent` | Same, extended with flow-rate learning |
 | `FreezerController` | Static `max_hold` from NVS | Dynamic `max_hold` from compartment temp |
 | `FridgeController` | Static `max_hold` from NVS | Dynamic `max_hold` from compartment temp |
 | `RouterController` | Always `urgency = CRITICAL`, `max_hold = 0` | Unchanged |
@@ -473,26 +474,7 @@ sensor values or applies per-load policy logic itself.
 
 **A trivial controller today** simply reads its `LoadProfile` from NVS and emits a fixed
 `LoadIntent`. It requires no sensor and no logic. As sensors are added, the controller's
-`emit_intent()` method is updated internally; the LCT receives the same struct type regardless.
-
----
-
-### 6.4 FillRequest as a Specialized LoadIntent
-
-`TankController` (TC) emits a specialized variant of `LoadIntent` — the `FillRequest` —
-because the pump is episodic and requires additional fields:
-
-```
-FillRequest {                          // extends LoadIntent for pump
-    urgency:               OPPORTUNISTIC | NORMAL | URGENT
-    source_preference:     SOLAR_ONLY | SOLAR_PREFERRED | ANY
-    estimated_duration_s:  uint32_t   // TC-calculated: volume / flow_rate + margin
-    target_level_pct:      uint8_t    // LCT stops pump when TC signals level reached
-}
-```
-
-TC escalates urgency dynamically as level drops, replacing the pending `FillRequest`.
-The LCT handles the pump command lifecycle (start, watchdog refresh, stop) based on TC signals.
+`get_current_intent()` method is updated internally; the LCT receives the same struct type regardless.
 
 ---
 

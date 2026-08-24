@@ -25,7 +25,7 @@ Este plano define a estratégia passo a passo para migrar o código atual (`smar
 1. **Tipos Primitivos (`include/load_types.hpp` e novos headers):**
    - Definir `LoadProfile` (struct com configs estáticas).
    - Definir enumerações de urgência e preferência de fonte.
-   - Definir os structs `LoadIntent` e `FillRequest` (herança ou composição).
+   - Definir o struct `LoadIntent`.
    - Definir a tabela de prioridades `PriorityConfig`.
 
 2. **Interfaces (`include/interfaces/`):**
@@ -53,7 +53,7 @@ Este plano define a estratégia passo a passo para migrar o código atual (`smar
 3. **Tank Controller (`TankController`):**
    - Implementar a lógica de apuração de nível e as regras de horário.
    - Implementar a transição dinâmica da urgência (`OPPORTUNISTIC` -> `NORMAL` -> `URGENT`).
-   - *Testes Exaustivos no Host:* Simular variações de nível (subindo/descendo) em diferentes horários (dia/noite) e validar a emissão correta do `FillRequest`.
+   - *Testes Exaustivos no Host:* Simular variações de nível (subindo/descendo) em diferentes horários (dia/noite) e validar a emissão correta do `LoadIntent`.
 
 ---
 
