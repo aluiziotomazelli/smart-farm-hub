@@ -99,6 +99,39 @@ physical sensors are installed.
 - `FillRequest` or `FillCancel` from TC.
 - `IEnergyMonitor` state change (solar/grid available/unavailable).
 
+**Two-layer decision model:**
+
+The LCT separates pre-planning from continuous rebalancing:
+
+| Layer | Data source | Purpose |
+|---|---|---|
+| **Pre-planning** | `LoadIntent.expected_watts_running` | "Can I commit this source for this load?" |
+| **Continuous rebalancing** | Real wattage reported by each node | "What is actually happening? Adjust headroom." |
+
+`expected_watts_running` only needs to be **conservatively correct**, not precise. It is used
+to avoid over-committing solar before a load is turned on. Once the load is running, the LCT
+discards the estimate and uses real telemetry exclusively.
+
+**Compressor duty cycle as a natural opportunity:**
+
+When a load node is on but its compressor is not running (thermostat satisfied), it reports
+near-idle wattage. The LCT detects this automatically on each telemetry update and recalculates
+headroom. This means the Scenario C window optimization (see Section 5.4) does not need to be
+explicitly triggered by a controller — the LCT detects the surplus organically and can
+activate a pending `FillRequest` or shift another load from GRID to SOLAR without any
+domain controller needing to be aware of the others.
+
+```
+FreezerController: LoadIntent { desired=ON, expected=700W }
+LCT: allocates 700W solar, sends CMD_ON to freezer node
+
+[Thermostat satisfied → compressor not running]
+Freezer node reports: 50W actual
+
+LCT rebalances: 650W surplus detected → activates pending FillRequest on solar
+                                      → or shifts fridge from GRID to SOLAR
+```
+
 ---
 
 ### 5.2 Tank Controller (TC)
