@@ -353,6 +353,71 @@ Tasks that require time-based evaluation even during idle periods:
 
 ---
 
+### 5.9 LCT Decision Priority Rules
+
+When solar capacity is insufficient to serve all active `LoadIntent` requests, the LCT must
+decide which loads get solar and which migrate to GRID (or are deferred).
+
+> **All priority values and tier assignments are configurable via NVS.** The tables below
+> represent the recommended defaults. No priority rule is hardcoded in the LCT logic —
+> the LCT reads a `PriorityConfig` table at startup and applies it uniformly.
+
+#### Table A — Solar Loss: Who Migrates to GRID (or is Deferred) First
+
+When solar headroom decreases, the LCT migrates or defers loads starting from the top:
+
+| Order | Urgency | Load type | Action |
+|---|---|---|---|
+| 1st (first to go) | `SHEDDABLE` | any | Turn OFF or move to GRID if available |
+| 2nd | `OPPORTUNISTIC` | any | Do not activate; deactivate if running |
+| 3rd | `NORMAL` | discretionary (pump) | Defer `FillRequest`; pump waits for next window |
+| 4th | `NORMAL` | continuous | Migrate to GRID; thermal inertia provides tolerance |
+| 5th (last) | `CRITICAL` | any | Never migrated, never shed |
+
+#### Table B — Solar Recovery: Who Returns to SOLAR First
+
+When solar headroom increases, the LCT restores loads to solar starting from the top:
+
+| Order | Urgency | Load type |
+|---|---|---|
+| 1st | `CRITICAL` | any (should already be on solar) |
+| 2nd | `NORMAL` | continuous |
+| 3rd | `NORMAL` | discretionary (pump, if TC has a pending request) |
+| 4th | `OPPORTUNISTIC` | any |
+| 5th | `SHEDDABLE` | any |
+
+#### Tiebreaker Rules (within the same tier)
+
+When two loads share the same urgency and type, the LCT applies these tiebreakers in order:
+
+1. **`max_hold_duration_s` (descending):** The load that can tolerate being off longest
+   is migrated to GRID first.
+   *Example: Freezer (30 min) migrates before Fridge (20 min) — Fridge stays on solar longer.*
+
+2. **Wattage vs. deficit (ascending):** If a single lower-wattage load is sufficient to
+   resolve the deficit, prefer migrating it over a higher-wattage load.
+   *Example: need to free 300 W — migrate Fridge (350 W) with one operation rather than
+   Freezer (700 W), which would over-free solar and waste grid capacity.*
+
+3. **Configurable per-load rank (NVS fallback):** Each `LoadProfile` includes an explicit
+   `priority_rank` field (lower = higher priority for solar). Used as the final tiebreaker
+   when rules 1 and 2 produce a tie.
+
+#### Continuous vs. Discretionary at the Same Urgency
+
+Within the same `urgency` tier, **continuous loads take precedence over discretionary loads**
+for solar allocation:
+
+- A continuous load migrated to GRID incurs a real cost (grid consumption).
+- A discretionary load deferred simply waits — no power is consumed on either source.
+
+Exception: a discretionary load at a *higher* urgency tier always beats a continuous load at
+a *lower* tier.
+
+*Example: `FillRequest` at `URGENT` > `FreezerController` at `NORMAL`.*
+
+---
+
 ## 6. Load Domain Controllers
 
 ### 6.1 Motivation
