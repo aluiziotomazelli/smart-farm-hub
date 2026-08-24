@@ -1,7 +1,7 @@
 # Load Control & Tank Controller Architecture
 
 > **Status:** Design — Not yet implemented  
-> **Last updated:** 2026-08-22
+> **Last updated:** 2026-08-23
 
 ---
 
@@ -44,17 +44,20 @@ Turned on and off based on policy. Source selection also applies.
 ## 3. Load Profile (Static Configuration)
 
 Before real-time telemetry arrives, the hub needs a priori knowledge of each load's expected behavior.
-This is a static `LoadProfile` per load, stored in NVS or provided at initialization:
+This is a static `LoadProfile` per load, stored in NVS or provided at initialization.
+It also serves as the **default** for load domain controllers that have no sensor input yet (see Section 6):
 
 | Field | Description |
 |---|---|
 | `expected_watts_running` | Typical consumption when active (e.g., compressor ON) |
 | `expected_watts_idle` | Typical consumption in idle/off-cycle (e.g., compressor OFF) |
 | `can_shed` | Whether the load can be temporarily cut in emergencies |
-| `max_shed_duration_s` | How long it can safely be without power (thermal inertia) |
+| `max_shed_duration_s` | How long it can safely be without power (static/thermal default) |
 | `is_continuous` | True for always-on loads; false for discretionary |
 
 The `LoadProfile` is used for feasibility calculations before actual power reports arrive.
+As load domain controllers grow smarter (e.g., via temperature sensors), they supersede
+these static defaults dynamically without the LCT needing any changes.
 
 ---
 
@@ -242,7 +245,81 @@ LoadControlStatus messages flow through a separate queue directly to the LCT.
 
 ---
 
-## 6. Fill Policy (TC Behavior)
+## 6. Load Domain Controllers
+
+### 6.1 Motivation
+
+Instead of the LCT hardcoding knowledge about each load's behavior (thermal tolerance, urgency
+rules, sensor thresholds), each load has its own **domain controller** that understands its
+physical constraints and emits a `LoadIntent` to the LCT.
+
+This decouples two concerns:
+- **LCT:** pure energy arbitrator — receives intents, allocates sources, manages headroom.
+- **Domain controllers:** domain experts — understand temperature, level, time of day, etc.
+
+The pattern applies uniformly whether a controller is trivial (wraps static NVS values) or
+sophisticated (computes dynamic tolerances from live sensor data). **The LCT interface never
+changes** as controllers grow smarter.
+
+---
+
+### 6.2 The LoadIntent Interface
+
+Every domain controller emits a `LoadIntent` to the LCT whenever its desired state or
+constraints change:
+
+```
+LoadIntent {
+    load_index:               LoadIndex
+    desired_state:            ON | OFF | FLEXIBLE
+    source_preference:        SOLAR_ONLY | SOLAR_PREFERRED | ANY
+    urgency:                  CRITICAL | NORMAL | OPPORTUNISTIC | SHEDDABLE
+    max_hold_duration_s:      uint32_t   // 0 = cannot be shed; max safe off-time
+    estimated_on_duration_s:  uint32_t   // for episodic loads (pump); 0 for continuous
+}
+```
+
+The LCT uses these intents to decide source assignment and shed order. It never reads
+sensor values or applies per-load policy logic itself.
+
+---
+
+### 6.3 Controller Summary
+
+| Controller | Today (no sensor) | With sensor |
+|---|---|---|
+| `TankController` | Level from telemetry → FillRequest | Same, extended with flow-rate learning |
+| `FreezerController` | Static `max_hold` from NVS | Dynamic `max_hold` from compartment temp |
+| `FridgeController` | Static `max_hold` from NVS | Dynamic `max_hold` from compartment temp |
+| `RouterController` | Always `urgency = CRITICAL`, `max_hold = 0` | Unchanged |
+| `LightingController` | Sheddable, `urgency = SHEDDABLE` | May add occupancy sensor later |
+
+**A trivial controller today** simply reads its `LoadProfile` from NVS and emits a fixed
+`LoadIntent`. It requires no sensor and no logic. As sensors are added, the controller's
+`emit_intent()` method is updated internally; the LCT receives the same struct type regardless.
+
+---
+
+### 6.4 FillRequest as a Specialized LoadIntent
+
+`TankController` (TC) emits a specialized variant of `LoadIntent` — the `FillRequest` —
+because the pump is episodic and requires additional fields:
+
+```
+FillRequest {                          // extends LoadIntent for pump
+    urgency:               OPPORTUNISTIC | NORMAL | URGENT
+    source_preference:     SOLAR_ONLY | SOLAR_PREFERRED | ANY
+    estimated_duration_s:  uint32_t   // TC-calculated: volume / flow_rate + margin
+    target_level_pct:      uint8_t    // LCT stops pump when TC signals level reached
+}
+```
+
+TC escalates urgency dynamically as level drops, replacing the pending `FillRequest`.
+The LCT handles the pump command lifecycle (start, watchdog refresh, stop) based on TC signals.
+
+---
+
+## 7. Fill Policy (TC Behavior)
 
 TC evaluates the following inputs on each tank report:
 
@@ -255,11 +332,11 @@ TC evaluates the following inputs on each tank report:
 
 | Condition | Request |
 |---|---|
-| Level > 80%, solar available | `OPPORTUNISTIC / SOLAR_ONLY` |
+| Level \> 80%, solar available | `OPPORTUNISTIC / SOLAR_ONLY` |
 | Level 60–80% | `OPPORTUNISTIC / SOLAR_PREFERRED` |
 | Level 40–60% | `NORMAL / SOLAR_PREFERRED` |
 | Level 20–40% | `NORMAL / ANY` |
-| Level < 20% | `URGENT / ANY` |
+| Level \< 20% | `URGENT / ANY` |
 | After sunset, level ≥ end-of-day target | No request (wait until morning) |
 | After sunset, level < end-of-day target | `NORMAL / ANY` (grid accepted at night) |
 
@@ -268,13 +345,14 @@ TC may escalate urgency dynamically. A pending `OPPORTUNISTIC` request is replac
 
 ---
 
-## 7. SystemState Refactoring
+## 8. SystemState Refactoring
 
 `SystemState` has grown into a monolithic shared object consumed by all components. It should
 be refactored so that each domain owns its data:
 
 - **LCT** maintains its own internal load state table (actual source, wattage, override mode).
 - **TC** maintains its own tank state (level history, fill intent state).
+- **Domain controllers** maintain their own per-load state (override, last intent emitted).
 - **UI snapshot** is a lightweight struct populated by the hub app periodically for the UIController
   to render. It is read-only from the UI's perspective.
 
@@ -283,7 +361,7 @@ owns its data; the UI reads a published snapshot.
 
 ---
 
-## 8. Override Mode Handling
+## 9. Override Mode Handling
 
 Each load node has a physical 3-position switch: `AUTO | SOLAR | GRID`.
 The position is reported in every `LoadControlStatus` message.
@@ -298,7 +376,7 @@ The position is reported in every `LoadControlStatus` message.
 
 ---
 
-## 9. What Does Not Change
+## 10. What Does Not Change
 
 - The ESP-NOW protocol and payload structures remain as-is.
 - `LoadControlHandler` continues to route incoming payloads to the correct `LoadIndex`.
@@ -309,13 +387,19 @@ The position is reported in every `LoadControlStatus` message.
 
 ---
 
-## 10. Open Questions / Future Work
+## 11. Open Questions / Future Work
 
-- **Freezer temperature sensor:** When added, `max_hold_duration_s` in the window FSM can become
-  dynamic. TC or LCT config should accept an optional temperature reading from the freezer node.
+- **Temperature sensors (fridge/freezer):** `FreezerController` and `FridgeController` already
+  define the interface for emitting `LoadIntent` with dynamic `max_hold_duration_s`. Adding a
+  temperature sensor requires only updating the controller's internal logic; the LCT is unchanged.
 - **Learned flow rate:** TC could estimate `pump_flow_rate` empirically by correlating pump-on
   duration with observed level changes, improving watchdog accuracy over time.
-- **Multiple discretionary loads:** When more discretionary loads are added, the window FSM and
-  priority system will need to generalize beyond pump-specific logic.
+- **Multiple discretionary loads:** When more discretionary loads are added (e.g., water heater),
+  each gets its own domain controller emitting `LoadIntent`. The window FSM in the LCT will need
+  to generalize to handle competing episodic requests.
 - **Solar sensor frequency:** Sending at 2 Hz minimum even when stable may be revisited on the
   solar node firmware. The hub already handles high-frequency data gracefully via the dedicated queue.
+- **LoadIntent priority conflict resolution:** When two controllers simultaneously request solar
+  (e.g., pump URGENT and freezer CRITICAL), the LCT needs a defined tiebreaker. This should be
+  a configurable priority table, not hardcoded logic.
+
