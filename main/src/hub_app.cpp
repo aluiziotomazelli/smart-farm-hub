@@ -228,7 +228,7 @@ esp_err_t HubApp::init_wifi()
     if (err != ESP_OK)
         return err;
 
-    ESP_LOGI(TAG, "Connecting to WiFi with sync retries (timeout: %u ms, max_retries: 3)...", CONNECT_WIFI_TIMEOUT_MS);
+    ESP_LOGI(TAG, "Connecting to WiFi async...");
     // err = wifi_.connect(CONNECT_WIFI_TIMEOUT_MS, 3, 1500);
     err = wifi_.connect();
     if (err == ESP_OK) {
