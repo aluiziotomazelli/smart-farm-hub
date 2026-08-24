@@ -274,7 +274,82 @@ Solar Node (≤8 Hz) → solar_queue → SolarProcessor task
     → update solar snapshot (for UI)
 ```
 
-LoadControlStatus messages flow through a separate queue directly to the LCT.
+LoadControlStatus messages flow through per-node queues directly to the LCT (see Section 5.8).
+
+---
+
+### 5.8 Synchronization Strategy
+
+#### Queue Layout
+
+The LCT uses a **FreeRTOS QueueSet** to block on multiple input sources simultaneously,
+avoiding the need for polling loops or shared mutexes on its internal state table.
+
+| Queue / Primitive | Type | Depth | Producer | Pattern |
+|---|---|---|---|---|
+| `solar_queue` | `SolarUpdate` | **1** | SolarProcessor task | `xQueueOverwrite` — always latest value |
+| `status_queues[N]` | `LoadStatusUpdate` | **1 per load** | Message handler (per node) | `xQueueOverwrite` — always latest per node |
+| `energy_semaphore` | binary semaphore | 1 | `IEnergyMonitor` ISR | Standard give/take |
+| `command_queue` | `LctCommand` | 8 | TC, Domain Controllers | `xQueueSend` — no overwrite, ordered |
+
+`solar_queue` and all `status_queues` use depth=1 with `xQueueOverwrite()`. This means the LCT
+always reads the most recent value — stale intermediate states are discarded automatically.
+
+`command_queue` uses standard `xQueueSend` because intents and requests must not be silently
+discarded (`FillRequest`, `LoadIntent` changes, `FillCancel` are events, not continuous data).
+
+#### QueueSet Membership
+
+`solar_queue`, all `status_queues[N]`, and `energy_semaphore` are added to the QueueSet.
+`command_queue` is **not** in the set — it is polled explicitly with timeout=0 at the start
+of each loop iteration to guarantee command priority over data updates.
+
+#### LCT Task Loop
+
+```
+loop:
+  // 1. Drain commands first (priority over data)
+  while xQueueReceive(command_queue, timeout=0):
+      process_command(cmd)
+      snapshot_dirty = true
+
+  // 2. Block on data sources (solar, status, energy monitor)
+  active = xQueueSelectFromSet(lct_set, timeout=100ms)
+  if   active == solar_queue:        process_solar();       snapshot_dirty = true
+  elif active == status_queues[i]:   process_status(i);     snapshot_dirty = true
+  elif active == energy_semaphore:   process_energy();      snapshot_dirty = true
+  else:                              process_periodic_tick()  // true idle timeout
+
+  // 3. UI snapshot at ~10 Hz (time-based, not event-based)
+  if (now - last_ui_update >= 100ms) and snapshot_dirty:
+      write_ui_snapshot()   // spinlock, fast copy
+      snapshot_dirty = false
+      last_ui_update = now
+```
+
+#### Why time-based UI update (not on periodic_tick)
+
+`process_periodic_tick()` only fires when the QueueSet timeout elapses with no data arriving.
+During normal daytime operation (solar at 8 Hz), the timeout never fires — the LCT is
+continuously processing `solar_queue`. A time-based check at the end of every loop iteration
+guarantees the UI snapshot is refreshed at ~10 Hz regardless of system load.
+
+#### Ownership and thread safety
+
+The LCT is the **sole writer** of its internal load state table. All other tasks communicate
+via queues — never by directly writing to LCT state. This eliminates the need for any mutex
+on the load state table itself.
+
+The UI snapshot is the only shared struct written by LCT and read by another task (UI Task).
+It is protected by a `portMUX_TYPE` spinlock. The write is a fast struct copy; the lock is
+held for microseconds.
+
+#### Periodic housekeeping (process_periodic_tick)
+
+Tasks that require time-based evaluation even during idle periods:
+- TC: check if `WAITING_FOR_WINDOW` timeout has expired.
+- LCT: check if any node has not reported within its expected interval (offline detection).
+- AlarmManager: evaluate time-based alarm conditions (e.g., inverter silent for > X minutes).
 
 ---
 
@@ -304,13 +379,17 @@ constraints change:
 ```
 LoadIntent {
     load_index:               LoadIndex
-    desired_state:            ON | OFF | FLEXIBLE
+    desired_state:            ON | OFF
     source_preference:        SOLAR_ONLY | SOLAR_PREFERRED | ANY
     urgency:                  CRITICAL | NORMAL | OPPORTUNISTIC | SHEDDABLE
     max_hold_duration_s:      uint32_t   // 0 = cannot be shed; max safe off-time
     estimated_on_duration_s:  uint32_t   // for episodic loads (pump); 0 for continuous
 }
 ```
+
+> `desired_state` has only two values: the controller either wants the load **ON** or **OFF**.
+> "Turn on only if there is solar surplus" semantics are expressed via `urgency = OPPORTUNISTIC`
+> combined with `source_preference = SOLAR_ONLY` — not via a third state.
 
 The LCT uses these intents to decide source assignment and shed order. It never reads
 sensor values or applies per-load policy logic itself.
