@@ -4,6 +4,21 @@ Este plano define a estratégia passo a passo para migrar o código atual (`smar
 
 ---
 
+## Fase 0: Extensão do HAL FreeRTOS
+**Objetivo:** Adicionar as primitivas de `QueueSet` e `QueueOverwrite` ao HAL, uma vez que elas ainda não existem no projeto.
+
+1. **Atualizar `i_hal_freertos.hpp`:**
+   - Adicionar `virtual QueueSetHandle_t queue_create_set(const UBaseType_t xEventQueueLength) = 0;`
+   - Adicionar `virtual BaseType_t queue_add_to_set(QueueSetMemberHandle_t xQueueOrSemaphore, QueueSetHandle_t xQueueSet) = 0;`
+   - Adicionar `virtual QueueSetMemberHandle_t queue_select_from_set(QueueSetHandle_t xQueueSet, TickType_t const xTicksToWait) = 0;`
+   - Adicionar `virtual BaseType_t queue_overwrite(QueueHandle_t xQueue, const void * pvItemToQueue) = 0;`
+
+2. **Atualizar Mocks e Implementações:**
+   - Implementar na classe real `HalFreertos`.
+   - Adicionar os `MOCK_METHOD` correspondentes na classe `MockHalFreertos` (`host_test_common/`).
+
+---
+
 ## Fase 1: Fundações e Contratos (TDD Phase 1)
 **Objetivo:** Definir os tipos de dados básicos, interfaces e mocks. Nenhuma alteração no código de produção existente nesta fase.
 
