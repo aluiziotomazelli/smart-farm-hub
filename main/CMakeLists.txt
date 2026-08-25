@@ -13,6 +13,7 @@ idf_component_register(
         "src/energy_monitor.cpp"
         "src/tank_controller.cpp"
         "src/load_control_engine.cpp"
+        "src/load_control_task.cpp"
         "src/node_registry.cpp"
         "src/ui_controller.cpp"
         "src/ui_input_manager.cpp"

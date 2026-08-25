@@ -56,7 +56,7 @@ TEST(EnergyMonitorTest, InitConfiguresInterruptsAndAttachesHandlers)
     MockHalFreertos mock_freertos;
     SemaphoreHandle_t dummy_sem = reinterpret_cast<SemaphoreHandle_t>(0x1234);
 
-    EnergyMonitor monitor(mock_gpio, mock_freertos, dummy_sem);
+    EnergyMonitor monitor(mock_gpio, mock_freertos);
 
     EnergyMonitorConfig cfg{
         .solar_gpio = GPIO_NUM_10,
@@ -64,6 +64,7 @@ TEST(EnergyMonitorTest, InitConfiguresInterruptsAndAttachesHandlers)
         .solar_active_low = false,
         .grid_active_low = true,
         .enable_interrupts = true,
+        .signal_semaphore = dummy_sem,
     };
 
     EXPECT_CALL(mock_gpio, config(_)).Times(2).WillRepeatedly(Return(ESP_OK));
@@ -74,6 +75,49 @@ TEST(EnergyMonitorTest, InitConfiguresInterruptsAndAttachesHandlers)
     EXPECT_EQ(monitor.init(cfg), ESP_OK);
 
     // On destruction, handlers should be removed
+    EXPECT_CALL(mock_gpio, isr_handler_remove(GPIO_NUM_10)).WillOnce(Return(ESP_OK));
+    EXPECT_CALL(mock_gpio, isr_handler_remove(GPIO_NUM_11)).WillOnce(Return(ESP_OK));
+}
+
+TEST(EnergyMonitorTest, InitFailsFastWhenInterruptsEnabledWithoutSemaphore)
+{
+    MockHalGpio mock_gpio;
+    MockHalFreertos mock_freertos;
+    EnergyMonitor monitor(mock_gpio, mock_freertos, nullptr);
+
+    EnergyMonitorConfig cfg{
+        .solar_gpio = GPIO_NUM_10,
+        .grid_gpio = GPIO_NUM_11,
+        .enable_interrupts = true,
+        .signal_semaphore = nullptr,
+    };
+
+    EXPECT_EQ(monitor.init(cfg), ESP_ERR_INVALID_ARG);
+}
+
+TEST(EnergyMonitorTest, SetSignalSemaphoreAllowsInitWithoutConfigSemaphore)
+{
+    MockHalGpio mock_gpio;
+    MockHalFreertos mock_freertos;
+    EnergyMonitor monitor(mock_gpio, mock_freertos, nullptr);
+
+    SemaphoreHandle_t dummy_sem = reinterpret_cast<SemaphoreHandle_t>(0x5678);
+    monitor.set_signal_semaphore(dummy_sem);
+
+    EnergyMonitorConfig cfg{
+        .solar_gpio = GPIO_NUM_10,
+        .grid_gpio = GPIO_NUM_11,
+        .enable_interrupts = true,
+        .signal_semaphore = nullptr,
+    };
+
+    EXPECT_CALL(mock_gpio, config(_)).Times(2).WillRepeatedly(Return(ESP_OK));
+    EXPECT_CALL(mock_gpio, install_isr_service(0)).WillOnce(Return(ESP_OK));
+    EXPECT_CALL(mock_gpio, isr_handler_add(GPIO_NUM_10, _, _)).WillOnce(Return(ESP_OK));
+    EXPECT_CALL(mock_gpio, isr_handler_add(GPIO_NUM_11, _, _)).WillOnce(Return(ESP_OK));
+
+    EXPECT_EQ(monitor.init(cfg), ESP_OK);
+
     EXPECT_CALL(mock_gpio, isr_handler_remove(GPIO_NUM_10)).WillOnce(Return(ESP_OK));
     EXPECT_CALL(mock_gpio, isr_handler_remove(GPIO_NUM_11)).WillOnce(Return(ESP_OK));
 }

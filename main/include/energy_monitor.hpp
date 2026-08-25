@@ -19,6 +19,7 @@ struct EnergyMonitorConfig {
     bool solar_active_low = false;       ///< True if LOW level indicates voltage presence (enables pull-up)
     bool grid_active_low = false;        ///< True if LOW level indicates voltage presence (enables pull-up)
     bool enable_interrupts = false;      ///< True to attach ISR on edge changes (GPIO_INTR_ANYEDGE)
+    SemaphoreHandle_t signal_semaphore = nullptr; ///< Binary semaphore to give from ISR on level changes
 };
 
 /**
@@ -32,14 +33,18 @@ public:
      * @brief Constructs EnergyMonitor with injected GPIO and FreeRTOS HAL dependencies.
      * @param hal_gpio Injected GPIO HAL interface.
      * @param hal_freertos Injected FreeRTOS HAL interface.
-     * @param signal_semaphore Optional binary semaphore to give from ISR on level changes.
      */
     EnergyMonitor(
         idf_hals::IGpioHAL& hal_gpio,
-        idf_hals::IHalFreertos& hal_freertos,
-        SemaphoreHandle_t signal_semaphore = nullptr);
+        idf_hals::IHalFreertos& hal_freertos);
 
     ~EnergyMonitor() override;
+
+    /**
+     * @brief Sets or updates the signal semaphore handle to notify on edge interrupts.
+     * @param signal_semaphore Semaphore handle.
+     */
+    void set_signal_semaphore(SemaphoreHandle_t signal_semaphore);
 
     /**
      * @brief Initializes GPIOs, configures pull resistors according to polarity, and sets interrupts.

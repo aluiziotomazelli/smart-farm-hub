@@ -8,11 +8,9 @@ static const char* TAG = "EnergyMonitor";
 
 EnergyMonitor::EnergyMonitor(
     idf_hals::IGpioHAL& hal_gpio,
-    idf_hals::IHalFreertos& hal_freertos,
-    SemaphoreHandle_t signal_semaphore)
+    idf_hals::IHalFreertos& hal_freertos)
     : hal_gpio_(hal_gpio)
     , hal_freertos_(hal_freertos)
-    , signal_semaphore_(signal_semaphore)
 {
 }
 
@@ -26,6 +24,11 @@ EnergyMonitor::~EnergyMonitor()
             hal_gpio_.isr_handler_remove(config_.grid_gpio);
         }
     }
+}
+
+void EnergyMonitor::set_signal_semaphore(SemaphoreHandle_t signal_semaphore)
+{
+    signal_semaphore_ = signal_semaphore;
 }
 
 void IRAM_ATTR EnergyMonitor::gpio_isr_handler(void* arg)
@@ -43,6 +46,15 @@ void IRAM_ATTR EnergyMonitor::gpio_isr_handler(void* arg)
 esp_err_t EnergyMonitor::init(const EnergyMonitorConfig& config)
 {
     config_ = config;
+    if (config_.signal_semaphore != nullptr) {
+        signal_semaphore_ = config_.signal_semaphore;
+    }
+
+    if (config_.enable_interrupts && signal_semaphore_ == nullptr) {
+        ESP_LOGE(TAG, "enable_interrupts is true but signal_semaphore is NULL! Refusing to initialize.");
+        return ESP_ERR_INVALID_ARG;
+    }
+
     gpio_int_type_t intr_type = config_.enable_interrupts ? GPIO_INTR_ANYEDGE : GPIO_INTR_DISABLE;
 
     if (config_.solar_gpio != GPIO_NUM_NC) {
