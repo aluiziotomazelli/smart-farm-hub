@@ -55,6 +55,11 @@ Este plano define a estratégia passo a passo para migrar o código atual (`smar
    - Implementar a transição dinâmica da urgência (`OPPORTUNISTIC` -> `NORMAL` -> `URGENT`).
    - *Testes Exaustivos no Host:* Simular variações de nível (subindo/descendo) em diferentes horários (dia/noite) e validar a emissão correta do `LoadIntent`.
 
+4. **Alarm Manager (`AlarmManager`):**
+   - Definir tipos de eventos de alarme (`AlarmType`, `AlarmSeverity`, `AlarmEvent`).
+   - Implementar a classe `AlarmManager` com suporte a expiração por tempo e acionamento de saídas (Buzzer via `IGpioHAL` e flags para a UI).
+   - *Testes no Host:* Validar ativação, persistência por tempo, auto-clear e silenciamento de alarmes.
+
 ---
 
 ## Fase 3: O Cérebro da LCT (Core Logic Engine)

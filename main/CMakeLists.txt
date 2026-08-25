@@ -10,6 +10,7 @@ idf_component_register(
         "src/handlers/solar_sensor_handler.cpp"
         "src/handlers/load_control_handler.cpp"
         "src/handlers/ota_status_handler.cpp"
+        "src/energy_monitor.cpp"
         "src/ui_controller.cpp"
         "src/ui_input_manager.cpp"
     INCLUDE_DIRS
