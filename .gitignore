@@ -27,3 +27,6 @@ host_test/**/coverage/
 # Local logs
 todo/
 
+# External third-party downloaded source
+**/etl-src/
+

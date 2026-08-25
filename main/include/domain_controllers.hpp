@@ -17,6 +17,8 @@ public:
                 .expected_watts_idle = 30,
                 .can_shed = true,
                 .max_shed_duration_s = 20 * 60, // 20 minutes safe off time
+                .min_switch_interval_s = 180,   // 3 minutes compressor pressure relief
+                .max_wait_window_s = 0,
                 .is_continuous = true,
                 .priority_rank = 3,
             })
@@ -39,6 +41,8 @@ public:
                 .expected_watts_idle = 40,
                 .can_shed = true,
                 .max_shed_duration_s = 30 * 60, // 30 minutes safe off time
+                .min_switch_interval_s = 180,   // 3 minutes compressor pressure relief
+                .max_wait_window_s = 0,
                 .is_continuous = true,
                 .priority_rank = 2,
             })
@@ -61,6 +65,8 @@ public:
                 .expected_watts_idle = 30,
                 .can_shed = false,
                 .max_shed_duration_s = 0, // Cannot be shed
+                .min_switch_interval_s = 600, // 10 minutes debounce to protect satellite link
+                .max_wait_window_s = 0,
                 .is_continuous = true,
                 .priority_rank = 1,
             })
@@ -83,6 +89,8 @@ public:
                 .expected_watts_idle = 0,
                 .can_shed = true,
                 .max_shed_duration_s = 0,
+                .min_switch_interval_s = 5,
+                .max_wait_window_s = 0,
                 .is_continuous = false,
                 .priority_rank = 5,
             })

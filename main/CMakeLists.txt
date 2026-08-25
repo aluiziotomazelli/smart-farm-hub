@@ -12,6 +12,7 @@ idf_component_register(
         "src/handlers/ota_status_handler.cpp"
         "src/energy_monitor.cpp"
         "src/tank_controller.cpp"
+        "src/load_control_engine.cpp"
         "src/ui_controller.cpp"
         "src/ui_input_manager.cpp"
     INCLUDE_DIRS
@@ -25,5 +26,6 @@ idf_component_register(
         display_gfx
         time_manager
         ui_inputs
+        etl
 )
 

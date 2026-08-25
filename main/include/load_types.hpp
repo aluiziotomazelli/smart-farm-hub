@@ -77,6 +77,8 @@ struct LoadProfile {
     uint16_t expected_watts_idle = 0;    ///< Idle / stand-by consumption (W)
     bool can_shed = false;               ///< Whether load can be shed in emergency
     uint32_t max_shed_duration_s = 0;    ///< Max safe unpowered duration (seconds)
+    uint32_t min_switch_interval_s = 5;  ///< Min seconds between source changes (contactor protection)
+    uint32_t max_wait_window_s = 600;    ///< For episodic loads: max wait for solar window before fallback (seconds)
     bool is_continuous = true;           ///< True for always-on loads, false for episodic (pump)
     uint8_t priority_rank = 10;          ///< Tiebreaker rank (lower = higher priority)
 };

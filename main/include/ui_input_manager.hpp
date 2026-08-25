@@ -2,7 +2,7 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
+#include "etl/vector.h"
 
 #include "esp_err.h"
 
@@ -18,12 +18,14 @@ struct ButtonEventMapping {
 };
 
 struct UiInputManagerConfig {
-    std::vector<ButtonEventMapping> encoder_push_mappings{
-        {ui_inputs::ButtonClickType::CLICK, UiEventType::CONFIRM},
-        {ui_inputs::ButtonClickType::LONG_CLICK, UiEventType::BACK}
+    static constexpr size_t MAX_BUTTON_MAPPINGS = 6;
+
+    etl::vector<ButtonEventMapping, MAX_BUTTON_MAPPINGS> encoder_push_mappings{
+        ButtonEventMapping{ui_inputs::ButtonClickType::CLICK, UiEventType::CONFIRM},
+        ButtonEventMapping{ui_inputs::ButtonClickType::LONG_CLICK, UiEventType::BACK}
     };
-    std::vector<ButtonEventMapping> boot_button_mappings{
-        {ui_inputs::ButtonClickType::CLICK, UiEventType::BOOT_CLICK}
+    etl::vector<ButtonEventMapping, MAX_BUTTON_MAPPINGS> boot_button_mappings{
+        ButtonEventMapping{ui_inputs::ButtonClickType::CLICK, UiEventType::BOOT_CLICK}
     };
     uint32_t poll_interval_ms{10};
     uint32_t task_stack_size{3072};

@@ -9,6 +9,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "../../components/time_manager"
     "../../components/ui_inputs"
     "../../components/display_gfx"
+    "../../external/etl"
     "../gtest"
     
     "$ENV{IDF_PATH}/tools/mocks/driver"

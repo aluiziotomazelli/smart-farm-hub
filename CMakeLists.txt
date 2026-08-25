@@ -10,6 +10,7 @@ list(APPEND EXTRA_COMPONENT_DIRS
     "${CMAKE_CURRENT_LIST_DIR}/components/ota_manager"
     "${CMAKE_CURRENT_LIST_DIR}/components/display_gfx"
     "${CMAKE_CURRENT_LIST_DIR}/components/time_manager"
+    "${CMAKE_CURRENT_LIST_DIR}/external/etl"
 )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)

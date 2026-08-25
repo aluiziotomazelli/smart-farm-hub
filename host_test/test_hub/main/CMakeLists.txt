@@ -10,6 +10,7 @@ idf_component_register(
         "test_load_control_handler.cpp"
         "test_energy_monitor_and_domain_controllers.cpp"
         "test_tank_controller.cpp"
+        "test_load_control_engine.cpp"
         "../../../main/src/command_manager.cpp"
         "../../../main/src/message_dispatcher.cpp"
         "../../../main/src/handlers/water_tank_handler.cpp"
@@ -18,6 +19,7 @@ idf_component_register(
         "../../../main/src/handlers/ota_status_handler.cpp"
         "../../../main/src/energy_monitor.cpp"
         "../../../main/src/tank_controller.cpp"
+        "../../../main/src/load_control_engine.cpp"
         "../../../main/src/ui_input_manager.cpp"
         "../../../main/src/ui_controller.cpp"
     INCLUDE_DIRS 
@@ -41,6 +43,7 @@ idf_component_register(
         time_manager
         ui_inputs
         display_gfx
+        etl
         WHOLE_ARCHIVE
 )
 
