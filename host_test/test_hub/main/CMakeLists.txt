@@ -9,6 +9,7 @@ idf_component_register(
         "test_solar_sensor_handler.cpp"
         "test_load_control_handler.cpp"
         "test_energy_monitor_and_domain_controllers.cpp"
+        "test_tank_controller.cpp"
         "../../../main/src/command_manager.cpp"
         "../../../main/src/message_dispatcher.cpp"
         "../../../main/src/handlers/water_tank_handler.cpp"
@@ -16,6 +17,7 @@ idf_component_register(
         "../../../main/src/handlers/load_control_handler.cpp"
         "../../../main/src/handlers/ota_status_handler.cpp"
         "../../../main/src/energy_monitor.cpp"
+        "../../../main/src/tank_controller.cpp"
         "../../../main/src/ui_input_manager.cpp"
         "../../../main/src/ui_controller.cpp"
     INCLUDE_DIRS 
