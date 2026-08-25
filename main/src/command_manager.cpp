@@ -147,27 +147,16 @@ esp_err_t CommandManager::broadcast_tank_level(
     bool backup_mode_active,
     bool float_switch_is_full)
 {
-    // TODO: implantar filtro de frequencia se a frequencia de envio estiver alta demais
     farm::TankLevelUpdate update_pkt{};
     update_pkt.tank_id = tank_id;
     update_pkt.level_permille = level_permille;
     update_pkt.backup_mode_active = backup_mode_active;
     update_pkt.float_switch_is_full = float_switch_is_full;
 
-    ESP_LOGI(
-        TAG,
-        "Broadcasting TANK_LEVEL_UPDATE: tank=%u, level=%u permille, backup=%d, full=%d to PUMP_CONTROL",
-        tank_id,
-        level_permille,
-        backup_mode_active,
-        float_switch_is_full);
+    ESP_LOGI(TAG, "Broadcasting TANK_LEVEL_UPDATE to PUMP_CONTROL");
 
     return espnow_.send_data(
-        farm::NodeId::PUMP_CONTROL,
-        farm::PayloadType::TANK_LEVEL_UPDATE,
-        &update_pkt,
-        sizeof(update_pkt),
-        false);
+        farm::NodeId::PUMP_CONTROL, farm::PayloadType::TANK_LEVEL_UPDATE, &update_pkt, sizeof(update_pkt), false);
 }
 
 esp_err_t CommandManager::dispatch_single_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack)

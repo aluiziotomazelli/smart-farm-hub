@@ -20,6 +20,8 @@
 #include "command_manager.hpp"
 #include "display_manager.hpp"
 #include "espnow_manager.hpp"
+#include "domain_controllers.hpp"
+#include "energy_monitor.hpp"
 #include "handlers/load_control_handler.hpp"
 #include "handlers/ota_status_handler.hpp"
 #include "handlers/solar_sensor_handler.hpp"
@@ -27,14 +29,19 @@
 #include "hub_app.hpp"
 #include "hub_nvs.hpp"
 #include "hub_tasks.hpp"
+#include "load_control_task.hpp"
 #include "message_dispatcher.hpp"
+#include "node_registry.hpp"
 #include "nvs_core.hpp"
 #include "ota_manager.hpp"
 #include "persistence_backend.hpp"
+#include "sun_schedule.hpp"
 #include "system_state.hpp"
+#include "tank_controller.hpp"
 #include "time_manager.hpp"
 #include "ui_events.hpp"
 #include "ui_input_manager.hpp"
+#include "ui_snapshot.hpp"
 #include "wifi_manager.hpp"
 
 static const char* TAG = "main";
@@ -160,6 +167,26 @@ extern "C" void app_main()
         espnow, app.get_stats(), nvs_hub, app_time_manager, g_system_state, g_state_mutex, hal_freertos);
     app.set_command_manager(command_mgr);
 
+    static UiSnapshot ui_snapshot;
+    static hub::NodeRegistry node_registry;
+    static SunSchedule sun_schedule(-23.5505f, -3.0f); // Default SP coordinates (lat, tz_offset)
+    static TankController tank_controller(app_time_manager, sun_schedule);
+    static EnergyMonitor energy_monitor(hal_gpio, hal_freertos);
+
+    // Dummy actuator dispatcher until CommandManager implements ILoadActuatorDispatcher
+    class DefaultActuatorDispatcher : public hub::ILoadActuatorDispatcher {
+    public:
+        bool dispatch_decision(const LoadControlDecision& decision) override {
+            (void)decision;
+            return true;
+        }
+    };
+    static DefaultActuatorDispatcher default_dispatcher;
+    static hub::LoadControlTask load_control_task(
+        hal_freertos, app_time_manager, ui_snapshot, default_dispatcher, energy_monitor);
+    load_control_task.init();
+    load_control_task.start();
+
     // Create and register payload handlers with the MessageDispatcher
     EventGroupHandle_t solar_events = hal_freertos.event_group_create();
     if (solar_events == nullptr) {
@@ -168,7 +195,7 @@ extern "C" void app_main()
 
     static hub::MessageDispatcher msg_dispatcher(rx_queue, espnow, hal_freertos);
     static hub::WaterTankHandler water_tank_handler(
-        g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos);
+        ui_snapshot, node_registry, tank_controller, load_control_task, command_mgr, hal_timer);
     static hub::SolarSensorHandler solar_sensor_handler(
         g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos, solar_events);
     static hub::LoadControlHandler load_control_handler(
