@@ -1,3 +1,4 @@
+// main/src/handlers/solar_sensor_handler.cpp
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -13,19 +14,17 @@ static const char* TAG = "SolarSensorHandler";
 namespace hub {
 
 SolarSensorHandler::SolarSensorHandler(
-    SystemState& state,
-    SemaphoreHandle_t state_mutex,
+    UiSnapshot& ui_snapshot,
+    INodeRegistry& node_registry,
+    ILoadControlTask& load_control_task,
     CommandManager& command_mgr,
     idf_hals::ITimerHAL& timer,
-    idf_hals::IHalFreertos& rtos,
-    EventGroupHandle_t solar_events,
     solar::SolarSystemConfig solar_cfg)
-    : state_(state)
-    , state_mutex_(state_mutex)
+    : ui_snapshot_(ui_snapshot)
+    , node_registry_(node_registry)
+    , load_control_task_(load_control_task)
     , command_mgr_(command_mgr)
     , timer_(timer)
-    , rtos_(rtos)
-    , solar_events_(solar_events)
     , solar_cfg_(solar_cfg)
 {
 }
@@ -40,65 +39,52 @@ espnow::AckStatus SolarSensorHandler::handle_payload(const espnow::AppMessage& m
     farm::SolarSensorReport report{};
     memcpy(&report, msg.payload, sizeof(farm::SolarSensorReport));
 
-    const int64_t now_ms = timer_.get_time_us() / 1000;
+    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
+    const int64_t now_ms = static_cast<int64_t>(timer_.get_time_us() / 1000);
 
-    // ── Pure PV physical power estimation (decoupled domain logic) ──
+    // 1. Pure PV physical power estimation (decoupled domain logic)
     const solar::SolarPowerEstimate est = solar::estimate(report, solar_cfg_);
 
-    // ── Time integration for estimated daily energy generated (Wh) ──
+    // 2. Time integration for estimated daily energy generated (Wh)
     float delta_h = 0.0f;
     if (last_update_ts_ms_ > 0 && !report.is_night_mode) {
         delta_h = static_cast<float>(now_ms - last_update_ts_ms_) / 3600000.0f;
-        // Ignore intervals larger than 5 minutes (e.g. node reboot or reconnect)
+        // Ignore intervals larger than 5 minutes (e.g. node reboot or long sleep)
         if (delta_h > (5.0f / 60.0f)) {
             delta_h = 0.0f;
         }
     }
     last_update_ts_ms_ = now_ms;
+    daily_yield_wh_hub_ += static_cast<float>(est.power_w_instant) * delta_h;
 
-    // ── Update SystemState under mutex ──
-    if (rtos_.semaphore_take(state_mutex_, portMAX_DELAY) == pdTRUE) {
-        state_.last_solar_update_ts = now_ms;
+    // 3. Update NodeRegistry power profile
+    node_registry_.set_power_profile(node_id, report.power_profile);
 
-        // Raw telemetry (filtered at node level)
-        state_.solar_isc_current_ma = report.isc_current_ma;
-        state_.solar_irradiance_wm2 = report.irradiance_wm2;
-        state_.solar_panel_temp_c = report.panel_temp_c;
-        state_.solar_battery_mv = report.battery_mv;
-        state_.solar_battery_percent = report.battery_percent;
-        state_.solar_battery_state = report.battery_state;
-        state_.solar_sensor_status = report.status;
-        state_.solar_max_current_ma = report.max_current_ma;
-        state_.solar_daily_yield_mah = report.daily_yield_mah;
-        state_.solar_is_night_mode = report.is_night_mode;
-        state_.solar_node_unix_time = report.unix_time;
+    // 4. Update UiSnapshot with solar telemetry and estimation
+    ui_snapshot_.update_solar(
+        now_ms,
+        report.isc_current_ma,
+        report.irradiance_wm2,
+        report.panel_temp_c,
+        report.battery_mv,
+        report.battery_percent,
+        report.battery_state,
+        report.status,
+        report.max_current_ma,
+        report.daily_yield_mah,
+        report.is_night_mode,
+        report.unix_time,
+        est.power_w_instant,
+        daily_yield_wh_hub_);
 
-        // Derived Hub telemetry
-        state_.solar_power_w_instant = est.power_w_instant;
-        state_.solar_power_w_avg = est.power_w_instant;
-        state_.solar_daily_yield_wh_hub += static_cast<float>(est.power_w_instant) * delta_h;
-
-        // Daily min/max temperature tracking
-        if (report.panel_temp_c != INT16_MIN) {
-            if (report.panel_temp_c > state_.solar_panel_temp_max_c) {
-                state_.solar_panel_temp_max_c = report.panel_temp_c;
-            }
-            if (report.panel_temp_c < state_.solar_panel_temp_min_c) {
-                state_.solar_panel_temp_min_c = report.panel_temp_c;
-            }
-        }
-
-        state_.set_node_power_profile(static_cast<farm::NodeId>(msg.sender_id), report.power_profile);
-
-        rtos_.semaphore_give(state_mutex_);
-    }
-
-    command_mgr_.get_stats().set_node_power_profile(static_cast<farm::NodeId>(msg.sender_id), report.power_profile);
-
-    // ── Reactive notification for Load Control Task (outside critical section) ──
-    if (solar_events_ != nullptr) {
-        rtos_.event_group_set_bits(solar_events_, 1 << 0);
-    }
+    // 5. Post reactive solar update to LoadControlTask
+    SolarPowerUpdate solar_update{
+        .power_w = est.power_w_instant,
+        .irradiance_wm2 = report.irradiance_wm2,
+        .is_night_mode = report.is_night_mode,
+        .timestamp_ms = now_ms,
+    };
+    load_control_task_.post_solar_update(solar_update);
 
     ESP_LOGI(
         TAG,
@@ -109,7 +95,7 @@ espnow::AckStatus SolarSensorHandler::handle_payload(const espnow::AppMessage& m
         est.power_w_instant,
         (report.panel_temp_c != INT16_MIN) ? (report.panel_temp_c / 10.0f) : 0.0f,
         static_cast<unsigned long>(report.daily_yield_mah),
-        state_.solar_daily_yield_wh_hub,
+        daily_yield_wh_hub_,
         report.is_night_mode ? "YES" : "NO",
         report.battery_mv,
         report.battery_percent);
@@ -119,12 +105,15 @@ espnow::AckStatus SolarSensorHandler::handle_payload(const espnow::AppMessage& m
 
 void SolarSensorHandler::post_handle_payload(const espnow::AppMessage& msg)
 {
-    if (msg.payload_len < sizeof(farm::SolarSensorReport)) {
-        return;
+    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
+    uint64_t unix_time = 0;
+
+    if (msg.payload_len >= sizeof(farm::SolarSensorReport)) {
+        const auto* report = reinterpret_cast<const farm::SolarSensorReport*>(msg.payload);
+        unix_time = report->unix_time;
     }
 
-    const auto* report = reinterpret_cast<const farm::SolarSensorReport*>(msg.payload);
-    command_mgr_.process_node_wake(static_cast<farm::NodeId>(msg.sender_id), report->unix_time);
+    command_mgr_.process_node_wake(node_id, unix_time);
 }
 
 } // namespace hub

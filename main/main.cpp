@@ -188,16 +188,11 @@ extern "C" void app_main()
     load_control_task.start();
 
     // Create and register payload handlers with the MessageDispatcher
-    EventGroupHandle_t solar_events = hal_freertos.event_group_create();
-    if (solar_events == nullptr) {
-        ESP_LOGE(TAG, "Failed to create solar_events EventGroup");
-    }
-
     static hub::MessageDispatcher msg_dispatcher(rx_queue, espnow, hal_freertos);
     static hub::WaterTankHandler water_tank_handler(
         ui_snapshot, node_registry, tank_controller, load_control_task, command_mgr, hal_timer);
     static hub::SolarSensorHandler solar_sensor_handler(
-        g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos, solar_events);
+        ui_snapshot, node_registry, load_control_task, command_mgr, hal_timer);
     static hub::LoadControlHandler load_control_handler(
         g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos);
     static hub::OtaStatusHandler ota_status_handler(

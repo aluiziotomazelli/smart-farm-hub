@@ -120,6 +120,15 @@ Instead of polling, `LoadControlTask` blocks on a FreeRTOS `QueueSet` (`xQueueSe
 - Forwards `TANK_LEVEL_UPDATE` to `CommandManager::broadcast_tank_level` for actuator node local display updates.
 - Triggers `CommandManager::process_node_wake`.
 
+### 6.2 `SolarSensorHandler`
+- Receives incoming `farm::SolarSensorReport`.
+- Computes pure domain AC power estimate via `solar::estimate(report, solar_cfg)`.
+- Accumulates daily Wh generation integral (`daily_yield_wh_hub`).
+- Updates `NodeRegistry::set_power_profile` (tracking day/night transition state).
+- Updates `UiSnapshot::update_solar` with physical and calculated telemetry.
+- Posts `SolarPowerUpdate` to `ILoadControlTask::post_solar_update` (waking LCT via `QueueSet` without polling).
+- Triggers `CommandManager::process_node_wake`.
+
 ---
 
 ## 7. Decoupled Presentation Layer: `UiSnapshot`

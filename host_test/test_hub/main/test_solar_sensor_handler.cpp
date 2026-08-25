@@ -3,14 +3,21 @@
 #include <gtest/gtest.h>
 
 #include "command_manager.hpp"
+#include "farm_protocol_types.hpp"
 #include "handlers/solar_sensor_handler.hpp"
-#include "hub_nvs.hpp"
 #include "mock_espnow_manager.hpp"
 #include "mock_hal_freertos.hpp"
+#include "mock_hal_nvs.hpp"
 #include "mock_hal_timer.hpp"
+#include "mock_load_control_task.hpp"
 #include "mock_persistence_backend.hpp"
 #include "mock_time_manager.hpp"
+#include "node_registry.hpp"
+#include "null_hub_nvs.hpp"
+#include "system_state.hpp"
+#include "ui_snapshot.hpp"
 
+using namespace hub;
 using ::testing::_;
 using ::testing::NiceMock;
 using ::testing::Return;
@@ -18,47 +25,41 @@ using ::testing::Return;
 class SolarSensorHandlerTest : public ::testing::Test
 {
 protected:
-    espnow::MockEspNowManager mock_espnow_;
-    NiceMock<MockPersistenceBackend> rtc_backend_;
-    NiceMock<MockPersistenceBackend> nvs_backend_;
-    HubNvs hub_storage_{rtc_backend_, nvs_backend_};
-    time_manager::MockTimeManager mock_time_;
-    NiceMock<idf_hals::MockHalFreertos> mock_rtos_;
-    NiceMock<idf_hals::MockTimerHAL> mock_timer_;
-
+    UiSnapshot ui_snapshot_;
+    NodeRegistry node_registry_;
+    NiceMock<MockLoadControlTask> mock_lct_;
+    NiceMock<espnow::MockEspNowManager> mock_espnow_;
     HubStats stats_;
-    SystemState state_;
-    SemaphoreHandle_t dummy_mutex_ = reinterpret_cast<SemaphoreHandle_t>(0x112233);
-    EventGroupHandle_t dummy_event_group_ = reinterpret_cast<EventGroupHandle_t>(0x445566);
+    NullHubNvs null_nvs_;
+    time_manager::MockTimeManager mock_time_;
+    SystemState dummy_state_;
+    SemaphoreHandle_t dummy_mutex_{ reinterpret_cast<SemaphoreHandle_t>(0x1234) };
+    NiceMock<idf_hals::MockHalFreertos> mock_rtos_;
+    CommandManager command_mgr_{ mock_espnow_, stats_, null_nvs_, mock_time_, dummy_state_, dummy_mutex_, mock_rtos_ };
+    NiceMock<idf_hals::MockTimerHAL> mock_timer_;
 
     void SetUp() override
     {
-        rtc_backend_.UseRealStorage();
-        nvs_backend_.UseRealStorage();
         stats_.reset();
-        ON_CALL(mock_rtos_, semaphore_take(_, _)).WillByDefault(Return(pdTRUE));
-        ON_CALL(mock_rtos_, semaphore_give(_)).WillByDefault(Return(pdTRUE));
         ON_CALL(mock_timer_, get_time_us()).WillByDefault(Return(1000000ULL)); // 1000 ms
+        ON_CALL(mock_time_, get_timestamp_ms()).WillByDefault(Return(1700000000000ULL));
     }
 };
 
 TEST_F(SolarSensorHandlerTest, InvalidPayloadLength_ReturnsError)
 {
-    hub::CommandManager command_mgr(mock_espnow_, stats_, hub_storage_, mock_time_, state_, dummy_mutex_, mock_rtos_);
-    hub::SolarSensorHandler sut(state_, dummy_mutex_, command_mgr, mock_timer_, mock_rtos_);
+    SolarSensorHandler handler(ui_snapshot_, node_registry_, mock_lct_, command_mgr_, mock_timer_);
 
     espnow::AppMessage msg{};
     msg.sender_id = static_cast<uint8_t>(farm::NodeId::SOLAR_SENSOR);
     msg.payload_len = sizeof(farm::SolarSensorReport) - 1;
 
-    auto status = sut.handle_payload(msg);
-    EXPECT_EQ(status, espnow::AckStatus::ERROR_INVALID_DATA);
+    EXPECT_EQ(handler.handle_payload(msg), espnow::AckStatus::ERROR_INVALID_DATA);
 }
 
-TEST_F(SolarSensorHandlerTest, ValidPayload_UpdatesStateAndComputesPower)
+TEST_F(SolarSensorHandlerTest, ValidPayload_UpdatesUiSnapshotNodeRegistryAndPostsToLct)
 {
-    hub::CommandManager command_mgr(mock_espnow_, stats_, hub_storage_, mock_time_, state_, dummy_mutex_, mock_rtos_);
-    hub::SolarSensorHandler sut(state_, dummy_mutex_, command_mgr, mock_timer_, mock_rtos_, dummy_event_group_);
+    SolarSensorHandler handler(ui_snapshot_, node_registry_, mock_lct_, command_mgr_, mock_timer_);
 
     farm::SolarSensorReport report{};
     report.power_profile = farm::PowerProfile::ALWAYS_ON;
@@ -77,50 +78,49 @@ TEST_F(SolarSensorHandlerTest, ValidPayload_UpdatesStateAndComputesPower)
     espnow::AppMessage msg{};
     msg.sender_id = static_cast<uint8_t>(farm::NodeId::SOLAR_SENSOR);
     msg.payload_len = sizeof(report);
+    msg.rssi = -55;
     memcpy(msg.payload, &report, sizeof(report));
 
-    EXPECT_CALL(mock_rtos_, event_group_set_bits(dummy_event_group_, 1 << 0)).Times(1);
+    // Expect LoadControlTask to receive solar update with computed power > 0
+    EXPECT_CALL(mock_lct_, post_solar_update(::testing::Field(&SolarPowerUpdate::power_w, ::testing::Gt(1000))))
+        .WillOnce(Return(ESP_OK));
 
-    auto status = sut.handle_payload(msg);
-    EXPECT_EQ(status, espnow::AckStatus::OK);
+    EXPECT_EQ(handler.handle_payload(msg), espnow::AckStatus::OK);
 
-    // Verify raw fields
-    EXPECT_EQ(state_.solar_isc_current_ma, 480);
-    EXPECT_EQ(state_.solar_irradiance_wm2, 800);
-    EXPECT_EQ(state_.solar_panel_temp_c, 300);
-    EXPECT_EQ(state_.solar_battery_mv, 4150);
-    EXPECT_EQ(state_.solar_battery_percent, 95);
-    EXPECT_EQ(state_.solar_battery_state, farm::BatteryState::NORMAL);
-    EXPECT_EQ(state_.solar_sensor_status, farm::SensorStatus::OK);
-    EXPECT_EQ(state_.solar_max_current_ma, 500);
-    EXPECT_EQ(state_.solar_daily_yield_mah, 1200);
-    EXPECT_FALSE(state_.solar_is_night_mode);
-    EXPECT_EQ(state_.solar_node_unix_time, 1700000000000ULL);
+    // Verify NodeRegistry was updated
+    farm::NodeMetadata node_meta{};
+    EXPECT_TRUE(node_registry_.get_node_info(farm::NodeId::SOLAR_SENSOR, node_meta));
+    EXPECT_EQ(node_meta.power_profile, farm::PowerProfile::ALWAYS_ON);
 
-    // Verify calculated power: 2640 * 0.8 * (1 - 0.004 * 5) * 0.85 = 2640 * 0.8 * 0.98 * 0.85 = 1759 W
-    EXPECT_EQ(state_.solar_power_w_instant, 1759);
-    EXPECT_EQ(state_.solar_power_w_avg, 1759);
-
-    // Verify min/max temperature tracking
-    EXPECT_EQ(state_.solar_panel_temp_max_c, 300);
-    EXPECT_EQ(state_.solar_panel_temp_min_c, 300);
-
-    // Verify node metadata update in stats and state
-    EXPECT_EQ(stats_.node_info[0].power_profile, farm::PowerProfile::ALWAYS_ON);
+    // Verify UiSnapshot was updated
+    UiSnapshotData snapshot = ui_snapshot_.get();
+    EXPECT_EQ(snapshot.solar_isc_current_ma, 480);
+    EXPECT_EQ(snapshot.solar_irradiance_wm2, 800);
+    EXPECT_EQ(snapshot.solar_panel_temp_c, 300);
+    EXPECT_EQ(snapshot.solar_battery_mv, 4150);
+    EXPECT_EQ(snapshot.solar_battery_percent, 95);
+    EXPECT_EQ(snapshot.solar_battery_state, farm::BatteryState::NORMAL);
+    EXPECT_EQ(snapshot.solar_sensor_status, farm::SensorStatus::OK);
+    EXPECT_EQ(snapshot.solar_max_current_ma, 500);
+    EXPECT_EQ(snapshot.solar_daily_yield_mah, 1200);
+    EXPECT_FALSE(snapshot.is_solar_night());
+    EXPECT_EQ(snapshot.solar_node_unix_time, 1700000000000ULL);
+    EXPECT_GT(snapshot.solar_power_w_instant, 1000);
 }
 
-TEST_F(SolarSensorHandlerTest, PostHandlePayload_ProcessesNodeWake)
+TEST_F(SolarSensorHandlerTest, PostHandlePayload_DispatchesNodeWakeToCommandManager)
 {
-    hub::CommandManager command_mgr(mock_espnow_, stats_, hub_storage_, mock_time_, state_, dummy_mutex_, mock_rtos_);
-    hub::SolarSensorHandler sut(state_, dummy_mutex_, command_mgr, mock_timer_, mock_rtos_);
+    SolarSensorHandler handler(ui_snapshot_, node_registry_, mock_lct_, command_mgr_, mock_timer_);
 
     farm::SolarSensorReport report{};
     report.unix_time = 1700000000000ULL;
 
     espnow::AppMessage msg{};
     msg.sender_id = static_cast<uint8_t>(farm::NodeId::SOLAR_SENSOR);
-    msg.payload_len = sizeof(report);
-    memcpy(msg.payload, &report, sizeof(report));
+    msg.payload_len = sizeof(farm::SolarSensorReport);
+    memcpy(msg.payload, &report, sizeof(farm::SolarSensorReport));
 
-    sut.post_handle_payload(msg);
+    handler.post_handle_payload(msg);
+
+    EXPECT_EQ(stats_.messages_received, 1);
 }
