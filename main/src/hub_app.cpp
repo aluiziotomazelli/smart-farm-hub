@@ -28,6 +28,7 @@ HubApp::HubApp(
     IHubNvs& hub_storage,
     hub::INodeRegistry& node_registry,
     hub::ICommandManager& cmd_mgr,
+    UiSnapshot& ui_snapshot,
     espnow::IEspNowManager& espnow,
     wifi_manager::IWiFiManager& wifi,
     IOtaManager& ota_manager,
@@ -40,6 +41,7 @@ HubApp::HubApp(
     , hub_storage_(hub_storage)
     , node_registry_(node_registry)
     , cmd_mgr_(cmd_mgr)
+    , ui_snapshot_(ui_snapshot)
     , espnow_(espnow)
     , wifi_(wifi)
     , ota_manager_(ota_manager)
@@ -252,11 +254,7 @@ void HubApp::update_wifi_status()
         wifi_.get_rssi(rssi);
     }
 
-    if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
-        g_system_state.wifi_connected = is_connected;
-        g_system_state.wifi_rssi = is_connected ? rssi : 0;
-        hal_rtos_.semaphore_give(g_state_mutex);
-    }
+    ui_snapshot_.update_wifi(is_connected, is_connected ? rssi : 0);
 }
 
 esp_err_t HubApp::init_espnow(QueueHandle_t rx_queue)

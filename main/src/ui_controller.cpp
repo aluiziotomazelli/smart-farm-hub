@@ -9,7 +9,7 @@
 #include "fonts/font14x22_num.hpp"
 #include "i_graphics_context.hpp"
 #include "i18n/i18n.hpp"
-#include "system_state.hpp"
+#include "ui_snapshot.hpp"
 #include "ui_events.hpp"
 #include "app_commands.hpp"
 #include "ui_controller.hpp"
@@ -25,8 +25,13 @@ static const char* battery_state_to_string(farm::BatteryState state);
 static ScreenMode get_screen_for_node(farm::NodeId node);
 static const char* get_node_name(farm::NodeId node);
 
-UIController::UIController(IGraphicsContext& gfx, QueueHandle_t app_cmd_queue, espnow::IEspNowManager* espnow)
+UIController::UIController(
+    IGraphicsContext& gfx,
+    hub::INodeRegistry* node_registry,
+    QueueHandle_t app_cmd_queue,
+    espnow::IEspNowManager* espnow)
     : gfx_(gfx)
+    , node_registry_(node_registry)
     , app_cmd_queue_(app_cmd_queue)
     , espnow_(espnow)
 {
@@ -241,44 +246,44 @@ void UIController::handle_event(const UiEvent& event)
 // Render Methods
 // ===============================================================
 
-void UIController::render_current_screen(const SystemState& state)
+void UIController::render_current_screen(const UiSnapshotData& data)
 {
     switch (current_screen_) {
     case ScreenMode::MAIN_SCREEN:
-        render_main_screen(state);
+        render_main_screen(data);
         break;
     case ScreenMode::WATER_TANK_SCREEN:
-        render_water_tank_screen(state);
+        render_water_tank_screen(data);
         break;
     case ScreenMode::PUMP_SCREEN:
-        render_pump_screen(state);
+        render_pump_screen(data);
         break;
     case ScreenMode::NODE_SUBMENU:
-        render_node_submenu(state);
+        render_node_submenu(data);
         break;
     case ScreenMode::NODE_STATS_SCREEN:
-        render_node_stats_screen(state);
+        render_node_stats_screen(data);
         break;
     case ScreenMode::NODE_INFO_SCREEN:
-        render_node_info_screen(state);
+        render_node_info_screen(data);
         break;
     case ScreenMode::WATER_TANK_LAST_REPORT_SCREEN:
-        render_water_tank_last_report_screen(state);
+        render_water_tank_last_report_screen(data);
         break;
     case ScreenMode::SOLAR_SENSOR_LAST_REPORT_SCREEN:
-        render_solar_sensor_last_report_screen(state);
+        render_solar_sensor_last_report_screen(data);
         break;
     case ScreenMode::PUMP_LAST_REPORT_SCREEN:
-        render_pump_last_report_screen(state);
+        render_pump_last_report_screen(data);
         break;
     case ScreenMode::SOLAR_SCREEN:
-        render_solar_screen(state);
+        render_solar_screen(data);
         break;
     case ScreenMode::LOADS_SCREEN:
-        render_loads_screen(state);
+        render_loads_screen(data);
         break;
     case ScreenMode::STATS_SCREEN:
-        render_stats_screen(state);
+        render_stats_screen(data);
         break;
     case ScreenMode::SETTINGS_SCREEN:
         render_settings_screen();
@@ -289,12 +294,12 @@ void UIController::render_current_screen(const SystemState& state)
     }
 }
 
-void UIController::render_main_screen(const SystemState& state)
+void UIController::render_main_screen(const UiSnapshotData& data)
 {
     char buf[64];
 
     // --- Header ---
-    gfx_.draw_string(0, 0, state.wifi_connected ? "[W]" : "[_]", 1);
+    gfx_.draw_string(0, 0, data.wifi_connected ? "[W]" : "[_]", 1);
     gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_FARM_HUB), 1, 24, 90);
     gfx_.draw_string(90, 0, "[B]", 1);
     gfx_.draw_string(114, 0, "[_]", 1);
@@ -306,13 +311,13 @@ void UIController::render_main_screen(const SystemState& state)
 
     int64_t now_ms = esp_timer_get_time() / 1000;
     uint32_t elapsed_s = 0;
-    if (state.last_water_update_ts > 0 && now_ms >= state.last_water_update_ts) {
-        elapsed_s = static_cast<uint32_t>((now_ms - state.last_water_update_ts) / 1000);
+    if (data.last_water_update_ts > 0 && now_ms >= data.last_water_update_ts) {
+        elapsed_s = static_cast<uint32_t>((now_ms - data.last_water_update_ts) / 1000);
     }
     uint32_t mm = elapsed_s / 60;
     uint32_t ss = elapsed_s % 60;
 
-    float level_percent = state.water_level_permille / 10.0f;
+    float level_percent = data.water_level_permille / 10.0f;
     snprintf(
         buf,
         sizeof(buf),
@@ -320,18 +325,18 @@ void UIController::render_main_screen(const SystemState& state)
         level_percent,
         static_cast<unsigned long>(mm),
         static_cast<unsigned long>(ss),
-        state.water_distance_cm);
+        data.water_distance_cm);
     gfx_.draw_string(0, 12, buf, 1);
 
     // --- Row 2: Visual bar ---
     gfx_.draw_rect(0, 22, 128, 8, 1);
-    int fill_width = (state.water_level_permille * 126) / 1000;
+    int fill_width = (data.water_level_permille * 126) / 1000;
     for (int i = 0; i < fill_width; ++i) {
         gfx_.draw_vline(1 + i, 23, 6, 1);
     }
 
     // --- Row 3: WiFi Status ---
-    snprintf(buf, sizeof(buf), "WiFi: %-3s    R: %d", state.wifi_connected ? "ON" : "OFF", state.wifi_rssi);
+    snprintf(buf, sizeof(buf), "WiFi: %-3s    R: %d", data.wifi_connected ? "ON" : "OFF", data.wifi_rssi);
     gfx_.draw_string(0, 34, buf, 1);
 
     // --- Row 4: Network Status ---
@@ -341,7 +346,7 @@ void UIController::render_main_screen(const SystemState& state)
     gfx_.draw_string(0, 54, "Stats: via node screens", 1);
 }
 
-void UIController::render_water_tank_screen(const SystemState& state)
+void UIController::render_water_tank_screen(const UiSnapshotData& data)
 {
     char buf[64];
     uint8_t x_pos = 0;
@@ -349,19 +354,19 @@ void UIController::render_water_tank_screen(const SystemState& state)
     uint8_t str_width = 0;
 
     // --- Header (y=0..7) ---
-    draw_wifi_signal_icon(x_pos, y_pos, state.wifi_connected, state.wifi_rssi);
+    draw_wifi_signal_icon(x_pos, y_pos, data.wifi_connected, data.wifi_rssi);
     gfx_.draw_string_centered(x_pos, I18n::get(StrId::HEADER_WATER_TANK), 1);
-    draw_battery_icon(112, y_pos, state.water_battery_percent);
+    draw_battery_icon(112, y_pos, data.water_battery_percent);
 
     y_pos = 8;
     gfx_.draw_hline(0, y_pos, gfx_.get_width(), 1);
 
-    if (state.water_backup_mode) {
+    if (data.water_backup_mode) {
         // --- Backup Mode Warning Display (y=12..35) ---
         gfx_.draw_string_centered(12, I18n::get(StrId::LABEL_SENSOR_FAILED), 1, 0, -1, &font8x12);
 
         const char* float_state_str =
-            state.water_float_switch_full ? I18n::get(StrId::LABEL_FLOAT_FULL) : I18n::get(StrId::LABEL_FLOAT_EMPTY);
+            data.water_float_switch_full ? I18n::get(StrId::LABEL_FLOAT_FULL) : I18n::get(StrId::LABEL_FLOAT_EMPTY);
         snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_FLOAT), float_state_str);
         gfx_.draw_string_centered(25, buf, 1, 0, -1, &font8x12);
 
@@ -380,7 +385,7 @@ void UIController::render_water_tank_screen(const SystemState& state)
     else {
         // --- Normal Primary Level Display (y=12..33, font14x22_num) ---
         y_pos = 12;
-        float level_percent = state.water_level_permille / 10.0f;
+        float level_percent = data.water_level_permille / 10.0f;
         snprintf(buf, sizeof(buf), "%.1f%%", level_percent);
         gfx_.draw_string_centered(y_pos, buf, 1, 0, -1, &font14x22_num);
 
@@ -391,7 +396,7 @@ void UIController::render_water_tank_screen(const SystemState& state)
         uint8_t bar_offset_x = (gfx_.get_width() - bar_width) / 2;
 
         gfx_.draw_rect(bar_offset_x, y_pos, bar_width, bar_height, 1);
-        int fill_width = (state.water_level_permille * (bar_width - 2)) / 1000;
+        int fill_width = (data.water_level_permille * (bar_width - 2)) / 1000;
         if (fill_width > 0) {
             if (fill_width > bar_width - 2)
                 fill_width = bar_width - 2;
@@ -407,12 +412,12 @@ void UIController::render_water_tank_screen(const SystemState& state)
     x_pos = 0;
     y_pos = 47;
 
-    const char* status_str = sensor_status_to_string(state.water_sensor_status);
+    const char* status_str = sensor_status_to_string(data.water_sensor_status);
     snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_READING), status_str);
     gfx_.draw_string(x_pos, y_pos, buf, 1);
 
     char time_buf[16];
-    format_elapsed_time(time_buf, sizeof(time_buf), state.last_water_update_ts);
+    format_elapsed_time(time_buf, sizeof(time_buf), data.last_water_update_ts);
     int time_w = gfx_.get_string_width(time_buf);
     gfx_.draw_string(gfx_.get_width() - time_w, y_pos, time_buf, 1);
 
@@ -425,7 +430,7 @@ void UIController::render_water_tank_screen(const SystemState& state)
 
     gfx_.draw_string(x_pos, y_pos, buf, 1);
 
-    bool float_demanding = !state.water_float_switch_full;
+    bool float_demanding = !data.water_float_switch_full;
     if (float_demanding) {
         gfx_.fill_rect(x_pos + str_width + 2, y_pos, 7, 7, 1);
     }
@@ -440,7 +445,7 @@ void UIController::render_water_tank_screen(const SystemState& state)
     int text_x = square_x - 2 - str_width;
 
     gfx_.draw_string(text_x, y_pos, buf, 1);
-    bool sensor_ok = !state.water_backup_mode;
+    bool sensor_ok = !data.water_backup_mode;
     if (sensor_ok) {
         gfx_.fill_rect(square_x, y_pos, 7, 7, 1);
     }
@@ -449,14 +454,14 @@ void UIController::render_water_tank_screen(const SystemState& state)
     }
 }
 
-void UIController::render_pump_screen(const SystemState& state)
+void UIController::render_pump_screen(const UiSnapshotData& data)
 {
     char buf[64];
     uint8_t y_pos = 0;
 
     // --- Header (y=0..7) ---
     // Wifi hub status
-    draw_wifi_signal_icon(0, y_pos, state.wifi_connected, state.wifi_rssi);
+    draw_wifi_signal_icon(0, y_pos, data.wifi_connected, data.wifi_rssi);
     // Pump header text
     gfx_.draw_string_centered(y_pos, I18n::get(StrId::HEADER_PUMP), 1, 24, 128 - 24);
     // ESP-NOW node pump status
@@ -473,7 +478,7 @@ void UIController::render_pump_screen(const SystemState& state)
     // Divider
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
 
-    const auto& pump = state.load(LoadIndex::PUMP);
+    const auto& pump = data.load(LoadIndex::PUMP);
 
     // --- Main Status (y=16) ---
     const char* status_str = I18n::get(StrId::STATUS_IDLE);
@@ -596,8 +601,9 @@ void UIController::render_pump_screen(const SystemState& state)
     gfx_.draw_string(gfx_.get_width() - time_w, y_pos, time_buf, 1);
 }
 
-void UIController::render_node_submenu(const SystemState& state)
+void UIController::render_node_submenu(const UiSnapshotData& data)
 {
+    (void)data;
     const char* node_name = get_node_name(active_node_);
     char title_buf[32];
     snprintf(title_buf, sizeof(title_buf), "%s MENU", node_name);
@@ -628,15 +634,16 @@ void UIController::render_node_submenu(const SystemState& state)
     }
 
     if (top_index > 0) {
-        gfx_.draw_string(120, 14, "^", 1);
+        gfx_.draw_char(gfx_.get_width() - 8, 14, '^', 1);
     }
-    if (top_index + VISIBLE_ITEMS < SUBMENU_TOTAL_ITEMS) {
-        gfx_.draw_string(120, 50, "v", 1);
+    if ((top_index + VISIBLE_ITEMS) < SUBMENU_TOTAL_ITEMS) {
+        gfx_.draw_char(gfx_.get_width() - 8, 50, 'v', 1);
     }
 }
 
-void UIController::render_node_stats_screen(const SystemState& state)
+void UIController::render_node_stats_screen(const UiSnapshotData& data)
 {
+    (void)data;
     const char* node_name = get_node_name(active_node_);
 
     char left_buf[32];
@@ -702,8 +709,9 @@ void UIController::render_node_stats_screen(const SystemState& state)
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 }
 
-void UIController::render_node_info_screen(const SystemState& state)
+void UIController::render_node_info_screen(const UiSnapshotData& data)
 {
+    (void)data;
     const char* node_name = get_node_name(active_node_);
     char title_buf[32];
     char buf[32];
@@ -713,16 +721,15 @@ void UIController::render_node_info_screen(const SystemState& state)
     gfx_.draw_string_centered(0, title_buf, 1);
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
 
-    // --- Lookup NodeMetadata from SystemState ---
-    const farm::NodeMetadata* meta = nullptr;
-    for (const auto& n : state.nodes) {
-        if (n.node_id == active_node_) {
-            meta = &n;
-            break;
-        }
+    // --- Lookup NodeMetadata from NodeRegistry ---
+    farm::NodeMetadata meta{};
+    bool meta_found = false;
+    if (node_registry_ != nullptr) {
+        meta_found = node_registry_->get_node_info(active_node_, meta);
     }
 
     // --- Lookup PeerInfo from EspNow ---
+    // TODO: Implement get_peer(NodeId, PeerInfo&) in IEspNowManager to avoid copying full peers vector
     uint8_t peer_mac[6] = {};
     bool peer_found = false;
     if (espnow_ != nullptr) {
@@ -743,8 +750,8 @@ void UIController::render_node_info_screen(const SystemState& state)
 
     // --- Line 2 (y=25): FW Version ---
     y_pos += 13;
-    if (meta != nullptr) {
-        snprintf(buf, sizeof(buf), "FW: v%u.%u.%u", meta->fw_major, meta->fw_minor, meta->fw_patch);
+    if (meta_found) {
+        snprintf(buf, sizeof(buf), "FW: v%u.%u.%u", meta.fw_major, meta.fw_minor, meta.fw_patch);
     }
     else {
         snprintf(buf, sizeof(buf), "FW: --");
@@ -754,8 +761,8 @@ void UIController::render_node_info_screen(const SystemState& state)
     // --- Line 3 (y=37): Power Profile ---
     y_pos += 13;
     const char* power_str = "--";
-    if (meta != nullptr) {
-        switch (meta->power_profile) {
+    if (meta_found) {
+        switch (meta.power_profile) {
         case farm::PowerProfile::ALWAYS_ON:
             power_str = "ALWAYS_ON";
             break;
@@ -790,7 +797,7 @@ void UIController::render_node_info_screen(const SystemState& state)
     gfx_.draw_string(0, y_pos, buf, 1);
 }
 
-void UIController::render_water_tank_last_report_screen(const SystemState& state)
+void UIController::render_water_tank_last_report_screen(const UiSnapshotData& data)
 {
     char left_buf[32];
     char right_buf[32];
@@ -805,22 +812,22 @@ void UIController::render_water_tank_last_report_screen(const SystemState& state
     uint8_t inter_line_space = 11;
     // --- Line 1: Permille & Distance ---
     uint8_t y_pos = 12;
-    snprintf(left_buf, sizeof(left_buf), "Lv: %u", state.water_level_permille);
-    snprintf(right_buf, sizeof(right_buf), "D: %.1fcm", state.water_distance_cm);
+    snprintf(left_buf, sizeof(left_buf), "Lv: %u", data.water_level_permille);
+    snprintf(right_buf, sizeof(right_buf), "D: %.1fcm", data.water_distance_cm);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
     // --- Line 2: Raw Battery Voltage (mV) & Percentage ---
     y_pos += inter_line_space;
-    snprintf(left_buf, sizeof(left_buf), "B: %umV", state.water_battery_mv);
-    snprintf(right_buf, sizeof(right_buf), "(%u%%)", state.water_battery_percent);
+    snprintf(left_buf, sizeof(left_buf), "B: %umV", data.water_battery_mv);
+    snprintf(right_buf, sizeof(right_buf), "(%u%%)", data.water_battery_percent);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
     // --- Line 3: Sensor Status & Operating Mode ---
     y_pos += inter_line_space;
-    snprintf(left_buf, sizeof(left_buf), "Sens: %s", sensor_status_to_string(state.water_sensor_status));
-    const char* mode_str = state.water_backup_mode ? "BACKUP" : "NORM";
+    snprintf(left_buf, sizeof(left_buf), "Sens: %s", sensor_status_to_string(data.water_sensor_status));
+    const char* mode_str = data.water_backup_mode ? "BACKUP" : "NORM";
     snprintf(right_buf, sizeof(right_buf), "Mode: %s", mode_str);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
@@ -828,21 +835,21 @@ void UIController::render_water_tank_last_report_screen(const SystemState& state
     // --- Line 4: Float switch (Left) + Elapsed Age MM:SS (Right-aligned) ---
     y_pos += inter_line_space;
     const char* float_str =
-        state.water_float_switch_full ? I18n::get(StrId::LABEL_FLOAT_FULL) : I18n::get(StrId::LABEL_FLOAT_EMPTY);
+        data.water_float_switch_full ? I18n::get(StrId::LABEL_FLOAT_FULL) : I18n::get(StrId::LABEL_FLOAT_EMPTY);
     snprintf(left_buf, sizeof(left_buf), "%s: %s", I18n::get(StrId::LABEL_FLOAT), float_str);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 
-    format_elapsed_time(right_buf, sizeof(right_buf), state.last_water_update_ts);
+    format_elapsed_time(right_buf, sizeof(right_buf), data.last_water_update_ts);
     int age_w = gfx_.get_string_width(right_buf);
     gfx_.draw_string(gfx_.get_width() - age_w, y_pos, right_buf, 1);
 
     // --- Line 5: Raw Unix Timestamp ---
     y_pos += inter_line_space;
-    snprintf(left_buf, sizeof(left_buf), "T: %llu", static_cast<unsigned long long>(state.water_node_unix_time / 1000));
+    snprintf(left_buf, sizeof(left_buf), "T: %llu", static_cast<unsigned long long>(data.water_node_unix_time / 1000));
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 }
 
-void UIController::render_solar_sensor_last_report_screen(const SystemState& state)
+void UIController::render_solar_sensor_last_report_screen(const UiSnapshotData& data)
 {
     gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_SOLAR_REPORT), 1);
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
@@ -856,50 +863,50 @@ void UIController::render_solar_sensor_last_report_screen(const SystemState& sta
     uint8_t inter_line_space = 11;
     // --- Line 1: Irradiance (Left) + Isc (Right) ---
     uint8_t y_pos = 12;
-    snprintf(left_buf, sizeof(left_buf), "Irr: %u", state.solar_irradiance_wm2);
-    snprintf(right_buf, sizeof(right_buf), "Isc: %u", state.solar_isc_current_ma);
+    snprintf(left_buf, sizeof(left_buf), "Irr: %u", data.solar_irradiance_wm2);
+    snprintf(right_buf, sizeof(right_buf), "Isc: %u", data.solar_isc_current_ma);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
     // --- Line 2: Estimated Power (Left) + Battery mV (Right) ---
     y_pos += inter_line_space;
-    snprintf(left_buf, sizeof(left_buf), "P: %uW", state.solar_power_w_instant);
-    snprintf(right_buf, sizeof(right_buf), "Max: %u", state.solar_max_current_ma);
+    snprintf(left_buf, sizeof(left_buf), "P: %uW", data.solar_power_w_instant);
+    snprintf(right_buf, sizeof(right_buf), "Max: %u", data.solar_max_current_ma);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
     // --- Line 3: Raw Battery Voltage (mV) & Percentage ---
     y_pos += inter_line_space;
-    snprintf(left_buf, sizeof(left_buf), "B: %umV", state.water_battery_mv);
-    snprintf(right_buf, sizeof(right_buf), "(%u%%)", state.water_battery_percent);
+    snprintf(left_buf, sizeof(left_buf), "B: %umV", data.solar_battery_mv);
+    snprintf(right_buf, sizeof(right_buf), "(%u%%)", data.solar_battery_percent);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 
     // --- Line 4: Panel Temp (Left) + Elapsed Age MM:SS (Right) ---
     y_pos += inter_line_space;
-    if (state.solar_panel_temp_c != INT16_MIN) {
-        snprintf(left_buf, sizeof(left_buf), "T: %.1fC", state.solar_panel_temp_c / 10.0f);
+    if (data.solar_panel_temp_c != INT16_MIN) {
+        snprintf(left_buf, sizeof(left_buf), "T: %.1fC", data.solar_panel_temp_c / 10.0f);
     }
     else {
         snprintf(left_buf, sizeof(left_buf), "T: --");
     }
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 
-    format_elapsed_time(right_buf, sizeof(right_buf), state.last_solar_update_ts);
+    format_elapsed_time(right_buf, sizeof(right_buf), data.last_solar_update_ts);
     int age_w = gfx_.get_string_width(right_buf);
     gfx_.draw_string(gfx_.get_width() - age_w, y_pos, right_buf, 1);
 
     // --- Line 5: Hub Wh Yield (Left) + Sensor status (Right) ---
     y_pos += inter_line_space;
-    format_compact_num(num_buf, sizeof(num_buf), state.solar_daily_yield_wh_hub);
+    format_compact_num(num_buf, sizeof(num_buf), data.solar_daily_yield_wh_hub);
     snprintf(left_buf, sizeof(left_buf), "Hub: %sWh", num_buf);
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 
-    snprintf(right_buf, sizeof(right_buf), "Sens: %s", sensor_status_to_string(state.solar_sensor_status));
+    snprintf(right_buf, sizeof(right_buf), "Sens: %s", sensor_status_to_string(data.solar_sensor_status));
     gfx_.draw_string(collumn_b_x_pos, y_pos, right_buf, 1);
 }
 
-void UIController::render_pump_last_report_screen(const SystemState& state)
+void UIController::render_pump_last_report_screen(const UiSnapshotData& data)
 {
     gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_PUMP_REPORT), 1);
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
@@ -912,7 +919,7 @@ void UIController::render_pump_last_report_screen(const SystemState& state)
     uint8_t inter_line_space = 11;
     uint8_t y_pos = 12;
 
-    const auto& pump = state.load(LoadIndex::PUMP);
+    const auto& pump = data.load(LoadIndex::PUMP);
 
     // --- Line 1: Status (Left) + Power W (Right) ---
     const char* status_str = I18n::get(StrId::STATUS_IDLE);
@@ -1003,7 +1010,7 @@ void UIController::render_pump_last_report_screen(const SystemState& state)
     gfx_.draw_string(collumn_a_x_pos, y_pos, left_buf, 1);
 }
 
-void UIController::render_solar_screen(const SystemState& state)
+void UIController::render_solar_screen(const UiSnapshotData& data)
 {
     char buf[64];
     char num_buf[16];
@@ -1011,32 +1018,32 @@ void UIController::render_solar_screen(const SystemState& state)
     uint8_t y_pos = 0;
 
     // --- Header (y=0..7) ---
-    draw_wifi_signal_icon(x_pos, y_pos, state.wifi_connected, state.wifi_rssi);
+    draw_wifi_signal_icon(x_pos, y_pos, data.wifi_connected, data.wifi_rssi);
     gfx_.draw_string_centered(x_pos, I18n::get(StrId::HEADER_SOLAR), 1);
-    draw_battery_icon(112, y_pos, state.solar_battery_percent);
+    draw_battery_icon(112, y_pos, data.solar_battery_percent);
 
     y_pos = 8;
     gfx_.draw_hline(0, y_pos, gfx_.get_width(), 1);
 
-    if (state.is_solar_night()) {
+    if (data.is_solar_night()) {
         // --- Night Mode Display (y=18..36) ---
         gfx_.draw_string_centered(18, I18n::get(StrId::SOLAR_LABEL_NIGHT), 1, 0, -1, &font8x12);
-        snprintf(buf, sizeof(buf), "Bat: %u mV (%u%%)", state.solar_battery_mv, state.solar_battery_percent);
+        snprintf(buf, sizeof(buf), "Bat: %u mV (%u%%)", data.solar_battery_mv, data.solar_battery_percent);
         gfx_.draw_string_centered(32, buf, 1);
     }
     else {
         // --- Normal Primary Power Display (y=12..33, font14x22_num) ---
         y_pos = 12;
-        snprintf(buf, sizeof(buf), "%u", state.solar_power_w_instant);
+        snprintf(buf, sizeof(buf), "%u", data.solar_power_w_instant);
         gfx_.draw_string_centered(y_pos, buf, 1, 0, -1, &font14x22_num);
 
         // --- Metrics Line (y=36): Irradiance (Left) + Temperature (Right) ---
         y_pos = 36;
-        snprintf(buf, sizeof(buf), "%u W/m2", state.solar_irradiance_wm2);
+        snprintf(buf, sizeof(buf), "%u W/m2", data.solar_irradiance_wm2);
         gfx_.draw_string(0, y_pos, buf, 1);
 
-        if (state.solar_panel_temp_c != INT16_MIN) {
-            snprintf(buf, sizeof(buf), "%.1f C", state.solar_panel_temp_c / 10.0f);
+        if (data.solar_panel_temp_c != INT16_MIN) {
+            snprintf(buf, sizeof(buf), "%.1f C", data.solar_panel_temp_c / 10.0f);
             int temp_w = gfx_.get_string_width(buf);
             gfx_.draw_string(gfx_.get_width() - temp_w, y_pos, buf, 1);
         }
@@ -1046,36 +1053,36 @@ void UIController::render_solar_screen(const SystemState& state)
     x_pos = 0;
     y_pos = 47;
 
-    const char* status_str = sensor_status_to_string(state.solar_sensor_status);
+    const char* status_str = sensor_status_to_string(data.solar_sensor_status);
     snprintf(buf, sizeof(buf), "%s: %s", I18n::get(StrId::LABEL_READING), status_str);
     gfx_.draw_string(x_pos, y_pos, buf, 1);
 
     char time_buf[16];
-    format_elapsed_time(time_buf, sizeof(time_buf), state.last_solar_update_ts);
+    format_elapsed_time(time_buf, sizeof(time_buf), data.last_solar_update_ts);
     int time_w = gfx_.get_string_width(time_buf);
     gfx_.draw_string(gfx_.get_width() - time_w, y_pos, time_buf, 1);
 
     // --- Footer Line 2 (y=57): Isc Current (Left) + Hub Daily Yield (Right) ---
     x_pos = 0;
     y_pos = 57;
-    snprintf(buf, sizeof(buf), "Isc: %u mA", state.solar_isc_current_ma);
+    snprintf(buf, sizeof(buf), "Isc: %u mA", data.solar_isc_current_ma);
     gfx_.draw_string(x_pos, y_pos, buf, 1);
 
-    format_compact_num(num_buf, sizeof(num_buf), state.solar_daily_yield_wh_hub);
+    format_compact_num(num_buf, sizeof(num_buf), data.solar_daily_yield_wh_hub);
     snprintf(buf, sizeof(buf), "%sWh", num_buf);
     int yield_w = gfx_.get_string_width(buf);
     gfx_.draw_string(gfx_.get_width() - yield_w, y_pos, buf, 1);
 }
 
-void UIController::render_loads_screen(const SystemState& state)
+void UIController::render_loads_screen(const UiSnapshotData& data)
 {
     char buf[64];
     gfx_.draw_string(0, 0, "[W]", 1);
     gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_LOADS), 1, 24, 128);
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
 
-    uint16_t total_w = state.total_solar_consumption_w();
-    int16_t margin = state.power_margin_w();
+    uint16_t total_w = data.total_solar_consumption_w();
+    int16_t margin = data.power_margin_w();
 
     snprintf(buf, sizeof(buf), "Solar Load: %u W", total_w);
     gfx_.draw_string(0, 14, buf, 1);
@@ -1083,7 +1090,7 @@ void UIController::render_loads_screen(const SystemState& state)
     snprintf(buf, sizeof(buf), "Margin:     %d W", margin);
     gfx_.draw_string(0, 26, buf, 1);
 
-    const auto& pump = state.load(LoadIndex::PUMP);
+    const auto& pump = data.load(LoadIndex::PUMP);
     const char* mode_str = "UNK";
     switch (pump.control_mode) {
     case farm::ControlMode::AUTO:
@@ -1109,8 +1116,9 @@ void UIController::render_loads_screen(const SystemState& state)
     gfx_.draw_string(0, 42, buf, 1);
 }
 
-void UIController::render_stats_screen(const SystemState& state)
+void UIController::render_stats_screen(const UiSnapshotData& data)
 {
+    (void)data;
     gfx_.draw_string_centered(0, I18n::get(StrId::HEADER_STATS), 1);
     gfx_.draw_hline(0, 8, gfx_.get_width(), 1);
 }

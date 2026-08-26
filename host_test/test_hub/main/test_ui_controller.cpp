@@ -24,7 +24,7 @@ protected:
 
 TEST_F(UIControllerTest, SettingsScreen_NavNextPrev_TogglesSettingsIndex)
 {
-    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
     sut.set_screen_mode(ScreenMode::SETTINGS_SCREEN);
 
     UiEvent next_ev{UiEventType::NAV_NEXT, 1};
@@ -46,7 +46,7 @@ TEST_F(UIControllerTest, SettingsScreen_NavNextPrev_TogglesSettingsIndex)
 
 TEST_F(UIControllerTest, SettingsScreen_ConfirmOnItem0_TogglesLanguage)
 {
-    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
     sut.set_screen_mode(ScreenMode::SETTINGS_SCREEN);
 
     EXPECT_EQ(I18n::get_language(), Language::EN_US);
@@ -62,7 +62,7 @@ TEST_F(UIControllerTest, SettingsScreen_ConfirmOnItem0_TogglesLanguage)
 
 TEST_F(UIControllerTest, SettingsScreen_ConfirmOnItem1_StartsEspNowPairing)
 {
-    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
     sut.set_screen_mode(ScreenMode::SETTINGS_SCREEN);
 
     // Move to item 1 (Pairing)
@@ -80,7 +80,7 @@ TEST_F(UIControllerTest, SettingsScreen_ConfirmOnItem1_StartsEspNowPairing)
 
 TEST_F(UIControllerTest, SettingsScreen_Render_DrawsMenuItems)
 {
-    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
     sut.set_screen_mode(ScreenMode::SETTINGS_SCREEN);
 
     EXPECT_CALL(mock_gfx_, draw_string_centered(0, _, 1, 0, -1, nullptr, false)).Times(::testing::AtLeast(1));
@@ -92,7 +92,7 @@ TEST_F(UIControllerTest, SettingsScreen_Render_DrawsMenuItems)
 
 TEST_F(UIControllerTest, CarouselNavigation_IncludesPumpScreen)
 {
-    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
     sut.set_screen_mode(ScreenMode::WATER_TANK_SCREEN);
 
     UiEvent next_ev{UiEventType::NAV_NEXT, 1};
@@ -113,7 +113,7 @@ TEST_F(UIControllerTest, CarouselNavigation_IncludesPumpScreen)
 
 TEST_F(UIControllerTest, PumpScreen_Confirm_EntersNodeSubmenuForPumpControl)
 {
-    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
     sut.set_screen_mode(ScreenMode::PUMP_SCREEN);
 
     UiEvent confirm_ev{UiEventType::CONFIRM, 0};
@@ -125,9 +125,9 @@ TEST_F(UIControllerTest, PumpScreen_Confirm_EntersNodeSubmenuForPumpControl)
 
 TEST_F(UIControllerTest, PumpScreen_Render_DrawsHeaderStatusAndIndicators)
 {
-    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
-    SystemState state;
-    auto& pump = state.load(LoadIndex::PUMP);
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
+    UiSnapshotData data;
+    auto& pump = data.load(LoadIndex::PUMP);
     pump.node_id = farm::NodeId::PUMP_CONTROL;
     pump.load_state = farm::LoadState::RUNNING;
     pump.control_mode = farm::ControlMode::AUTO;
@@ -144,12 +144,12 @@ TEST_F(UIControllerTest, PumpScreen_Render_DrawsHeaderStatusAndIndicators)
     EXPECT_CALL(mock_gfx_, draw_rect(_, _, _, _, 1)).Times(::testing::AtLeast(2)); // Lock, Man, Grid boxes outline
     EXPECT_CALL(mock_gfx_, draw_char(_, _, _, 1, nullptr, false)).Times(::testing::AnyNumber());
 
-    sut.render_pump_screen(state);
+    sut.render_pump_screen(data);
 }
 
 TEST_F(UIControllerTest, PumpSubmenu_LastReport_EntersPumpLastReportScreenAndReturnsOnBack)
 {
-    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
     sut.set_screen_mode(ScreenMode::NODE_SUBMENU);
     sut.set_active_node(farm::NodeId::PUMP_CONTROL);
 
@@ -166,9 +166,9 @@ TEST_F(UIControllerTest, PumpSubmenu_LastReport_EntersPumpLastReportScreenAndRet
 
 TEST_F(UIControllerTest, PumpLastReportScreen_Render_DrawsAllRows)
 {
-    UIController sut(mock_gfx_, nullptr, &mock_espnow_);
-    SystemState state;
-    auto& pump = state.load(LoadIndex::PUMP);
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
+    UiSnapshotData data;
+    auto& pump = data.load(LoadIndex::PUMP);
     pump.node_id = farm::NodeId::PUMP_CONTROL;
     pump.load_state = farm::LoadState::RUNNING;
     pump.control_mode = farm::ControlMode::AUTO;
@@ -186,5 +186,5 @@ TEST_F(UIControllerTest, PumpLastReportScreen_Render_DrawsAllRows)
     EXPECT_CALL(mock_gfx_, draw_hline(0, 8, 128, 1)).Times(::testing::AtLeast(1));
     EXPECT_CALL(mock_gfx_, draw_string(_, _, _, 1, nullptr, _)).Times(::testing::AtLeast(8));
 
-    sut.render_pump_last_report_screen(state);
+    sut.render_pump_last_report_screen(data);
 }

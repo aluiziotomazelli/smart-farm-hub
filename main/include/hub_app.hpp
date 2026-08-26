@@ -21,6 +21,7 @@
 #include "farm_protocol_types.hpp"
 #include "hub_stats.hpp"
 #include "ui_events.hpp"
+#include "ui_snapshot.hpp"
 
 struct HubAppConfig
 {
@@ -35,6 +36,7 @@ public:
         IHubNvs& hub_storage,
         hub::INodeRegistry& node_registry,
         hub::ICommandManager& cmd_mgr,
+        UiSnapshot& ui_snapshot,
         espnow::IEspNowManager& espnow,
         wifi_manager::IWiFiManager& wifi,
         IOtaManager& ota_manager,
@@ -66,6 +68,7 @@ private:
     IHubNvs& hub_storage_;
     hub::INodeRegistry& node_registry_;
     hub::ICommandManager& cmd_mgr_;
+    UiSnapshot& ui_snapshot_;
     espnow::IEspNowManager& espnow_;
     wifi_manager::IWiFiManager& wifi_;
     IOtaManager& ota_manager_;

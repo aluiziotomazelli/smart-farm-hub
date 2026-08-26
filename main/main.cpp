@@ -140,11 +140,16 @@ extern "C" void app_main()
     auto& wifi = wifi_manager::WiFiManager::get_instance();
     auto& espnow = espnow::EspNowManager::instance();
 
+    static UiSnapshot ui_snapshot;
+    static hub::NodeRegistry node_registry;
+    static hub::CommandManager command_mgr(espnow, node_registry, app_time_manager);
+
     DisplayManagerConfig display_cfg{
         .sda_pin = I2C_SDA_GPIO,
         .scl_pin = I2C_SCL_GPIO,
     };
-    static DisplayManager display_mgr(ui_event_queue, app_cmd_queue, &espnow, hal_freertos, hal_i2c, display_cfg);
+    static DisplayManager display_mgr(
+        ui_snapshot, node_registry, ui_event_queue, app_cmd_queue, &espnow, hal_freertos, hal_i2c, display_cfg);
     if (display_mgr.init() == ESP_OK) {
         display_mgr.start();
     }
@@ -152,15 +157,12 @@ extern "C" void app_main()
         ESP_LOGE(TAG, "Failed to initialize DisplayManager");
     }
 
-    static UiSnapshot ui_snapshot;
-    static hub::NodeRegistry node_registry;
-    static hub::CommandManager command_mgr(espnow, node_registry, app_time_manager);
-
     HubApp app(
         nvs_core,
         nvs_hub,
         node_registry,
         command_mgr,
+        ui_snapshot,
         espnow,
         wifi,
         ota_manager,

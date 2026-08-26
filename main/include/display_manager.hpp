@@ -8,9 +8,11 @@
 #include "interfaces/i_display_manager.hpp"
 #include "interfaces/i_hal_freertos.hpp"
 #include "interfaces/i_hal_i2c.hpp"
+#include "interfaces/i_node_registry.hpp"
 #include "hal_display_ssd1306.hpp"
 #include "framebuffer_graphics_context.hpp"
 #include "ui_controller.hpp"
+#include "ui_snapshot.hpp"
 
 struct DisplayManagerConfig
 {
@@ -33,6 +35,8 @@ class DisplayManager : public IDisplayManager
 {
 public:
     DisplayManager(
+        UiSnapshot& ui_snapshot,
+        hub::INodeRegistry& node_registry,
         QueueHandle_t ui_event_queue,
         QueueHandle_t app_cmd_queue,
         espnow::IEspNowManager* espnow,
@@ -50,6 +54,8 @@ private:
     static void task_fn(void* arg);
     void display_loop();
 
+    UiSnapshot& ui_snapshot_;
+    hub::INodeRegistry& node_registry_;
     QueueHandle_t ui_event_queue_;
     QueueHandle_t app_cmd_queue_;
     espnow::IEspNowManager* espnow_{nullptr};

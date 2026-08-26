@@ -3,18 +3,21 @@
 #include "esp_log.h"
 
 #include "display_manager.hpp"
-#include "system_state.hpp"
 
 static const char* TAG = "DisplayManager";
 
 DisplayManager::DisplayManager(
+    UiSnapshot& ui_snapshot,
+    hub::INodeRegistry& node_registry,
     QueueHandle_t ui_event_queue,
     QueueHandle_t app_cmd_queue,
     espnow::IEspNowManager* espnow,
     idf_hals::IHalFreertos& rtos,
     idf_hals::II2cHAL& i2c_hal,
     const DisplayManagerConfig& config)
-    : ui_event_queue_(ui_event_queue)
+    : ui_snapshot_(ui_snapshot)
+    , node_registry_(node_registry)
+    , ui_event_queue_(ui_event_queue)
     , app_cmd_queue_(app_cmd_queue)
     , espnow_(espnow)
     , rtos_(rtos)
@@ -95,7 +98,7 @@ void DisplayManager::task_fn(void* arg)
 
 void DisplayManager::display_loop()
 {
-    UIController ui(*gfx_ctx_, app_cmd_queue_, espnow_);
+    UIController ui(*gfx_ctx_, &node_registry_, app_cmd_queue_, espnow_);
 
     while (true) {
         UiEvent event;
@@ -111,11 +114,7 @@ void DisplayManager::display_loop()
             rtos_.task_delay(pdMS_TO_TICKS(500));
         }
 
-        SystemState snapshot;
-        if (g_state_mutex != nullptr && rtos_.semaphore_take(g_state_mutex, portMAX_DELAY) == pdTRUE) {
-            snapshot = g_system_state;
-            rtos_.semaphore_give(g_state_mutex);
-        }
+        UiSnapshotData snapshot = ui_snapshot_.get();
 
         gfx_ctx_->clear(0);
         ui.render_current_screen(snapshot);

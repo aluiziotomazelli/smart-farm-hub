@@ -6,7 +6,8 @@
 
 #include "i_graphics_context.hpp"
 #include "interfaces/i_espnow_manager.hpp"
-#include "system_state.hpp"
+#include "interfaces/i_node_registry.hpp"
+#include "ui_snapshot.hpp"
 #include "ui_events.hpp"
 #include "app_commands.hpp"
 
@@ -44,25 +45,26 @@ enum class SubmenuItem : uint8_t
 class UIController
 {
 public:
-    explicit UIController(
+    UIController(
         IGraphicsContext& gfx,
+        hub::INodeRegistry* node_registry = nullptr,
         QueueHandle_t app_cmd_queue = nullptr,
         espnow::IEspNowManager* espnow = nullptr);
-    void render_main_screen(const SystemState& state);
-    void render_stats_screen(const SystemState& state);
+    void render_main_screen(const UiSnapshotData& data);
+    void render_stats_screen(const UiSnapshotData& data);
     void render_settings_screen();
     void render_boot_screen();
-    void render_water_tank_screen(const SystemState& state);
-    void render_pump_screen(const SystemState& state);
-    void render_water_tank_last_report_screen(const SystemState& state);
-    void render_solar_sensor_last_report_screen(const SystemState& state);
-    void render_pump_last_report_screen(const SystemState& state);
-    void render_node_submenu(const SystemState& state);
-    void render_node_stats_screen(const SystemState& state);
-    void render_node_info_screen(const SystemState& state);
-    void render_solar_screen(const SystemState& state);
-    void render_loads_screen(const SystemState& state);
-    void render_current_screen(const SystemState& state);
+    void render_water_tank_screen(const UiSnapshotData& data);
+    void render_pump_screen(const UiSnapshotData& data);
+    void render_water_tank_last_report_screen(const UiSnapshotData& data);
+    void render_solar_sensor_last_report_screen(const UiSnapshotData& data);
+    void render_pump_last_report_screen(const UiSnapshotData& data);
+    void render_node_submenu(const UiSnapshotData& data);
+    void render_node_stats_screen(const UiSnapshotData& data);
+    void render_node_info_screen(const UiSnapshotData& data);
+    void render_solar_screen(const UiSnapshotData& data);
+    void render_loads_screen(const UiSnapshotData& data);
+    void render_current_screen(const UiSnapshotData& data);
 
     void handle_event(const UiEvent& event);
     ScreenMode get_screen_mode() const { return current_screen_; }
@@ -72,6 +74,7 @@ public:
 
 private:
     IGraphicsContext& gfx_;
+    hub::INodeRegistry* node_registry_{nullptr};
     QueueHandle_t app_cmd_queue_;
     espnow::IEspNowManager* espnow_{nullptr};
     ScreenMode current_screen_{ScreenMode::WATER_TANK_SCREEN};
