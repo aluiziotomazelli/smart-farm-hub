@@ -315,7 +315,6 @@ void LoadControlTask::run_loop()
         if (snapshot_dirty_) {
             refresh_ui_snapshot();
             snapshot_dirty_ = false;
-            last_ui_refresh_ms_ = now_ms;
         }
     }
 

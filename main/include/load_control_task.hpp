@@ -23,8 +23,6 @@ struct LoadControlTaskConfig
     uint32_t stack_size = 4096;
     UBaseType_t priority = 5;
     uint32_t loop_timeout_ms = 100; ///< QueueSet block timeout (controls periodic tick rate)
-    // TODO: verify ui_refresh_interval_ms value
-    uint32_t ui_refresh_interval_ms = 100; ///< Minimum interval between UiSnapshot refreshes
     size_t command_queue_length = 16;
 };
 
@@ -114,7 +112,6 @@ private:
     volatile bool last_solar_available_{true};
     volatile bool last_grid_available_{true};
 
-    int64_t last_ui_refresh_ms_{0};
     bool snapshot_dirty_{false};
 };
 
