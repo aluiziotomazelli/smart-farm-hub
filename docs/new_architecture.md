@@ -129,24 +129,72 @@ Instead of polling, `LoadControlTask` blocks on a FreeRTOS `QueueSet` (`xQueueSe
 - Posts `SolarPowerUpdate` to `ILoadControlTask::post_solar_update` (waking LCT via `QueueSet` without polling).
 - Triggers `CommandManager::process_node_wake`.
 
+### 6.3 `LoadControlHandler`
+- Receives incoming `farm::LoadControlStatusReport` from actuator nodes (e.g. Pump Control).
+- Formats `LoadStatusUpdate` with circuit ID, load state, operating mode, active power source, instant watts, and runtime counters.
+- Posts status directly to `ILoadControlTask::post_load_status` (overwriting the dedicated queue for that `LoadIndex`).
+- Triggers `CommandManager::process_node_wake`.
+
 ---
 
-## 7. Decoupled Presentation Layer: `UiSnapshot`
+## 7. Command Routing & Dispatching: `CommandManager`
 
-### 7.1 Concept & Operational Model
+### 7.1 Architecture & Dual Roles
+`CommandManager` implements `ICommandManager` (which inherits from `ILoadActuatorDispatcher`):
+1. **Automated Load Actuation (`dispatch_decision`):** Dispatches load state and source transitions directly from `LoadControlTask` to actuator nodes.
+2. **Administrative Command Routing (`send_command` / `dispatch_single_command`):**
+   - **`ALWAYS_ON` nodes:** Transmitted immediately via ESP-NOW.
+   - **`DEEP_SLEEP` / `LOW_POWER` nodes:** Enqueued in a fixed-capacity, zero-heap RAM queue (`etl::queue<PendingCommand, MAX_PENDING_COMMANDS>`).
+   - **Reactive Dispatch (`process_node_wake`):** Called by message handlers when a sleeping node transmits telemetry, draining pending commands instantly before the node returns to sleep.
+
+---
+
+## 8. Presentation Layer: `UiSnapshot` & `UIController`
+
+### 8.1 Concept & Operational Model
 The UI display task (running at ~2-5 Hz) requires a frozen, consistent photograph of system metrics without locking the high-frequency `LoadControlTask` (running at ~8-10 Hz).
 
-### 7.2 Planned Modularization of `UiSnapshotData`
-To maintain strict single-responsibility principles in Phase 5, `UiSnapshotData` will be partitioned into granular domain structures:
-- `WaterTankUiData`: Focused strictly on level, float switch, ultrasonic metrics.
-- `SolarUiData`: Focused on PV irradiance, instant generation, panel temperature, and daily Wh yield.
-- `LoadControlUiData`: Focused on electrical load contactors, active source, power margin, and episodic window states.
-
-Screen rendering functions in `UIController` will accept only their respective sub-structs (e.g., `render_water_tank_screen(const WaterTankUiData&)`).
+`UiSnapshot` acts as a thread-safe telemetry cache:
+- Producers (`LoadControlTask`, `WaterTankHandler`, `SolarSensorHandler`, `HubApp`) update specific sub-fields via fast lock guards.
+- Consumers (`DisplayManager` / `UIController`) call `ui_snapshot.get()` once per frame, obtaining a local `UiSnapshotData` copy in sub-microseconds without blocking any application tasks.
+- Static node metadata (firmware version, power profile) is queried on-demand from `INodeRegistry`.
 
 ---
 
-## 8. Architectural Comparison Summary
+## 9. Unified Subsystem Lifecycle & OTA Resilience: `HubApp`
+
+### 9.1 Composition Root & Failure Rollback
+To avoid leaving the Hub in a zombie state after a failed firmware update, all background tasks and hardware subsystems are orchestrated within `HubApp::init(...)`:
+
+```
+   ┌─────────────────────────────────────────────────────────────┐
+   │                       app_main()                            │
+   │  - Instantiates HALs, Drivers, Queues, Managers, Handlers   │
+   │  - Injects all dependencies into HubApp                     │
+   │  - Calls app.init() -> app.run()                            │
+   └──────────────────────────────┬──────────────────────────────┘
+                                  │
+                                  ▼
+   ┌─────────────────────────────────────────────────────────────┐
+   │                       HubApp::init()                        │
+   │  1. Check pending OTA verification                          │
+   │  2. Initialize Core & Hub NVS Storage                       │
+   │  3. Initialize & Start UiInputManager                       │
+   │  4. Initialize & Start DisplayManager                       │
+   │  5. Initialize LoadControlTask & hand semaphore to EnergyMon│
+   │  6. Initialize EnergyMonitor & Start LoadControlTask        │
+   │  7. Initialize WiFi & ESP-NOW Transport                     │
+   │  8. Start MessageDispatcher Task                            │
+   │  9. Start SNTP Time Synchronization                         │
+   │  10. If ANY step fails -> Trigger check_firmware() Rollback │
+   └─────────────────────────────────────────────────────────────┘
+```
+
+If any task creation or memory allocation fails when booting a new firmware partition, `HubApp::init` flags `session_healthy_ = false`, invokes `ota_manager_.rollback()`, and restarts into the previous stable firmware partition.
+
+---
+
+## 10. Architectural Comparison Summary
 
 | Attribute | Legacy Architecture (`SystemState`) | New Architecture (`NodeRegistry` + `UiSnapshot` + LCT) |
 | :--- | :--- | :--- |
@@ -155,4 +203,5 @@ Screen rendering functions in `UIController` will accept only their respective s
 | **Memory Management** | Mixed dynamically sized structures | 100% Zero-Heap (`etl::vector`, `std::array`, fixed PODs) |
 | **Domain Isolation** | All subsystems coupled via single header | Strict interface injection (`ITankController`, `INodeRegistry`, `ILoadControlTask`, etc.) |
 | **Arbitration Execution**| Split across handlers and display loops | Centralized in dedicated `LoadControlTask` via `QueueSet` |
+| **Lifecycle & Rollback** | Fragmented manual startups in `app_main` | Centralized in `HubApp::init` with unified OTA failure rollback |
 | **Testability** | Requires instantiating global state | Fully testable in Linux host tests with isolated mocks/real HALs |
