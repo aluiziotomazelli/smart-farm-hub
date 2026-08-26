@@ -15,6 +15,7 @@ idf_component_register(
         "test_node_registry.cpp"
         "test_load_control_task.cpp"
         "test_water_tank_handler.cpp"
+        "test_ota_status_handler.cpp"
         "../../../main/src/command_manager.cpp"
         "../../../main/src/message_dispatcher.cpp"
         "../../../main/src/handlers/water_tank_handler.cpp"
