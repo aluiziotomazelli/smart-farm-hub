@@ -195,7 +195,7 @@ extern "C" void app_main()
     static hub::SolarSensorHandler solar_sensor_handler(
         ui_snapshot, node_registry, load_control_task, command_mgr, hal_timer);
     static hub::LoadControlHandler load_control_handler(
-        g_system_state, g_state_mutex, command_mgr, hal_timer, hal_freertos);
+        node_registry, load_control_task, command_mgr, hal_timer);
     static hub::OtaStatusHandler ota_status_handler(
         [&app](uint8_t node_id, uint8_t major, uint8_t minor, uint8_t patch) {
             app.on_node_version_received(node_id, major, minor, patch);

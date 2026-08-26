@@ -27,16 +27,15 @@ void NodeRegistry::set_node_metadata(
         }
     }
 
-    // 2. Allocate in first free slot
-    for (auto& entry : nodes_) {
-        if (entry.node_id == farm::NodeId::UNKNOWN) {
-            entry.node_id = node_id;
-            entry.power_profile = profile;
-            entry.fw_major = major;
-            entry.fw_minor = minor;
-            entry.fw_patch = patch;
-            return;
-        }
+    // 2. Append new node if capacity allows
+    if (!nodes_.full()) {
+        farm::NodeMetadata meta{};
+        meta.node_id = node_id;
+        meta.power_profile = profile;
+        meta.fw_major = major;
+        meta.fw_minor = minor;
+        meta.fw_patch = patch;
+        nodes_.push_back(meta);
     }
 }
 
@@ -48,20 +47,23 @@ void NodeRegistry::set_power_profile(farm::NodeId node_id, farm::PowerProfile pr
 
     std::lock_guard<std::mutex> lock(mutex_);
 
+    // 1. If entry exists, return early if unchanged, or update
     for (auto& entry : nodes_) {
         if (entry.node_id == node_id) {
+            if (entry.power_profile == profile) {
+                return; // Early return: zero change
+            }
             entry.power_profile = profile;
             return;
         }
     }
 
-    // If not registered yet, create default entry with this profile
-    for (auto& entry : nodes_) {
-        if (entry.node_id == farm::NodeId::UNKNOWN) {
-            entry.node_id = node_id;
-            entry.power_profile = profile;
-            return;
-        }
+    // 2. If not registered yet, append new node with default metadata
+    if (!nodes_.full()) {
+        farm::NodeMetadata meta{};
+        meta.node_id = node_id;
+        meta.power_profile = profile;
+        nodes_.push_back(meta);
     }
 }
 
@@ -77,8 +79,12 @@ void NodeRegistry::set_fw_version(
 
     std::lock_guard<std::mutex> lock(mutex_);
 
+    // 1. If entry exists, return early if unchanged, or update
     for (auto& entry : nodes_) {
         if (entry.node_id == node_id) {
+            if (entry.fw_major == major && entry.fw_minor == minor && entry.fw_patch == patch) {
+                return; // Early return: zero change
+            }
             entry.fw_major = major;
             entry.fw_minor = minor;
             entry.fw_patch = patch;
@@ -86,15 +92,14 @@ void NodeRegistry::set_fw_version(
         }
     }
 
-    // If not registered yet, create default entry with this version
-    for (auto& entry : nodes_) {
-        if (entry.node_id == farm::NodeId::UNKNOWN) {
-            entry.node_id = node_id;
-            entry.fw_major = major;
-            entry.fw_minor = minor;
-            entry.fw_patch = patch;
-            return;
-        }
+    // 2. If not registered yet, append new node with default profile
+    if (!nodes_.full()) {
+        farm::NodeMetadata meta{};
+        meta.node_id = node_id;
+        meta.fw_major = major;
+        meta.fw_minor = minor;
+        meta.fw_patch = patch;
+        nodes_.push_back(meta);
     }
 }
 
@@ -129,24 +134,16 @@ bool NodeRegistry::get_node_info(farm::NodeId node_id, farm::NodeMetadata& out_e
 etl::vector<farm::NodeMetadata, farm::MAX_HUB_NODES> NodeRegistry::get_all_nodes() const
 {
     std::lock_guard<std::mutex> lock(mutex_);
-
-    etl::vector<farm::NodeMetadata, farm::MAX_HUB_NODES> result;
-    for (const auto& entry : nodes_) {
-        if (entry.node_id != farm::NodeId::UNKNOWN) {
-            result.push_back(entry);
-        }
-    }
-
-    return result;
+    return nodes_;
 }
 
 bool NodeRegistry::remove_node(farm::NodeId node_id)
 {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    for (auto& entry : nodes_) {
-        if (entry.node_id == node_id) {
-            entry = farm::NodeMetadata{};
+    for (auto it = nodes_.begin(); it != nodes_.end(); ++it) {
+        if (it->node_id == node_id) {
+            nodes_.erase(it);
             return true;
         }
     }
@@ -157,9 +154,7 @@ bool NodeRegistry::remove_node(farm::NodeId node_id)
 void NodeRegistry::clear()
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    for (auto& entry : nodes_) {
-        entry = farm::NodeMetadata{};
-    }
+    nodes_.clear();
 }
 
 } // namespace hub

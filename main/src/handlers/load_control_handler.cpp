@@ -13,18 +13,14 @@ static const char* TAG = "LoadControlHandler";
 namespace hub {
 
 LoadControlHandler::LoadControlHandler(
-    SystemState& state,
-    SemaphoreHandle_t state_mutex,
+    INodeRegistry& node_registry,
+    ILoadControlTask& load_control_task,
     CommandManager& command_mgr,
-    idf_hals::ITimerHAL& timer,
-    idf_hals::IHalFreertos& rtos,
-    EventGroupHandle_t load_events)
-    : state_(state)
-    , state_mutex_(state_mutex)
+    idf_hals::ITimerHAL& timer)
+    : node_registry_(node_registry)
+    , load_control_task_(load_control_task)
     , command_mgr_(command_mgr)
     , timer_(timer)
-    , rtos_(rtos)
-    , load_events_(load_events)
 {
 }
 
@@ -39,30 +35,39 @@ espnow::AckStatus LoadControlHandler::handle_payload(const espnow::AppMessage& m
     memcpy(&report, msg.payload, sizeof(farm::LoadControlStatus));
 
     auto sender_node = static_cast<farm::NodeId>(msg.sender_id);
+    const int64_t now_ms = static_cast<int64_t>(timer_.get_time_us() / 1000);
 
-    if (rtos_.semaphore_take(state_mutex_, portMAX_DELAY) == pdTRUE) {
-        auto* load = state_.find_or_allocate_load(sender_node, report.circuit_id);
-        if (load != nullptr) {
-            load->control_mode = report.control_mode;
-            load->active_source = report.active_power_source;
-            load->load_state = report.load_state;
-            load->power_w = report.power_w;
-            load->runtime_s = report.runtime_s;
-            load->uptime_s = report.uptime_s;
-            load->unix_time = report.unix_time;
-            load->last_update_ts = timer_.get_time_us() / 1000;
-        }
+    // 1. Update NodeRegistry power profile
+    node_registry_.set_power_profile(sender_node, report.power_profile);
 
-        state_.set_node_power_profile(sender_node, report.power_profile);
-
-        rtos_.semaphore_give(state_mutex_);
+    // 2. Map node & circuit to logical LoadIndex
+    LoadIndex load_idx = LoadIndex::PUMP;
+    if (sender_node == farm::NodeId::PUMP_CONTROL && report.circuit_id == 0) {
+        load_idx = LoadIndex::PUMP;
+    } else {
+        // Fallback for future circuits / secondary loads
+        load_idx = static_cast<LoadIndex>(report.circuit_id % static_cast<uint8_t>(LoadIndex::MAX));
     }
 
-    command_mgr_.get_stats().set_node_power_profile(sender_node, report.power_profile);
+    // 3. Populate LoadStatusUpdate
+    LoadStatusUpdate status_update{
+        .load_index = load_idx,
+        .node_id = sender_node,
+        .circuit_id = report.circuit_id,
+        .control_mode = report.control_mode,
+        .active_source = report.active_power_source,
+        .load_state = report.load_state,
+        .power_w = report.power_w,
+        .runtime_s = report.runtime_s,
+        .timestamp_ms = now_ms,
+    };
+
+    // 4. Forward status report to LoadControlTask
+    load_control_task_.post_load_status(status_update);
 
     ESP_LOGI(
         TAG,
-        "[LOAD CONTROL] Node: 0x%02X | Circuit: %u | State: %u | Mode: %u | Source: %u | Power: %u W | Runtime: %lu s | Uptime: %lu s | RSSI: %d dBm | Time: %llu ms",
+        "[LOAD CONTROL] Node: 0x%02X | Circuit: %u | State: %u | Mode: %u | Source: %u | Power: %u W | Runtime: %lu s | Uptime: %lu s | RSSI: %d dBm",
         msg.sender_id,
         report.circuit_id,
         static_cast<uint8_t>(report.load_state),
@@ -71,12 +76,7 @@ espnow::AckStatus LoadControlHandler::handle_payload(const espnow::AppMessage& m
         report.power_w,
         static_cast<unsigned long>(report.runtime_s),
         static_cast<unsigned long>(report.uptime_s),
-        msg.rssi,
-        static_cast<unsigned long long>(report.unix_time));
-
-    if (load_events_ != nullptr) {
-        rtos_.event_group_set_bits(load_events_, 1 << 0);
-    }
+        msg.rssi);
 
     return espnow::AckStatus::OK;
 }

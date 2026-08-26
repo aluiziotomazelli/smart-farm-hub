@@ -3,37 +3,43 @@
 
 #include "command_manager.hpp"
 #include "farm_protocol_types.hpp"
-#include "interfaces/i_hal_freertos.hpp"
 #include "interfaces/i_hal_timer.hpp"
+#include "interfaces/i_load_control_task.hpp"
+#include "interfaces/i_node_registry.hpp"
 #include "interfaces/i_payload_handler.hpp"
-#include "system_state.hpp"
+#include "load_control_types.hpp"
 
 namespace hub {
 
 /**
- * @brief Handles incoming LOAD_CONTROL_STATUS telemetry messages from any actuator node.
+ * @class LoadControlHandler
+ * @brief Handles incoming LOAD_CONTROL_STATUS telemetry messages from actuator nodes.
+ *
+ * Ingests actuator status reports, updates NodeRegistry, and forwards LoadStatusUpdate
+ * directly to LoadControlTask.
  */
 class LoadControlHandler : public IPayloadHandler
 {
 public:
     LoadControlHandler(
-        SystemState& state,
-        SemaphoreHandle_t state_mutex,
+        INodeRegistry& node_registry,
+        ILoadControlTask& load_control_task,
         CommandManager& command_mgr,
-        idf_hals::ITimerHAL& timer,
-        idf_hals::IHalFreertos& rtos,
-        EventGroupHandle_t load_events = nullptr);
+        idf_hals::ITimerHAL& timer);
 
+    ~LoadControlHandler() override = default;
+
+    /** @copydoc IPayloadHandler::handle_payload */
     espnow::AckStatus handle_payload(const espnow::AppMessage& msg) override;
+
+    /** @copydoc IPayloadHandler::post_handle_payload */
     void post_handle_payload(const espnow::AppMessage& msg) override;
 
 private:
-    SystemState& state_;
-    SemaphoreHandle_t state_mutex_;
+    INodeRegistry& node_registry_;
+    ILoadControlTask& load_control_task_;
     CommandManager& command_mgr_;
     idf_hals::ITimerHAL& timer_;
-    idf_hals::IHalFreertos& rtos_;
-    EventGroupHandle_t load_events_{nullptr};
 };
 
 } // namespace hub

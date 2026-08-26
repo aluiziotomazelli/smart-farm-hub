@@ -50,7 +50,7 @@ public:
 
 private:
     mutable std::mutex mutex_;
-    std::array<farm::NodeMetadata, farm::MAX_HUB_NODES> nodes_{};
+    etl::vector<farm::NodeMetadata, farm::MAX_HUB_NODES> nodes_{};
 };
 
 } // namespace hub
