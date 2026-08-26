@@ -12,12 +12,13 @@
  * Add future loads before MAX and update MAX accordingly.
  */
 enum class LoadIndex : uint8_t {
-    PUMP = 0,     ///< Water pump (motobomba) — primary solar load
-    FRIDGE = 1,   ///< Refrigerator
-    FREEZER = 2,  ///< Freezer
-    ROUTER = 3,   ///< Network router
-    LIGHTING = 4, ///< General lighting circuit
-    MAX = 8,      ///< Array capacity (leave headroom for expansion)
+    PUMP = 0,       ///< Water pump (motobomba) — primary solar load
+    FRIDGE = 1,     ///< Refrigerator
+    FREEZER = 2,    ///< Freezer
+    ROUTER = 3,     ///< Network router
+    LIGHTING = 4,   ///< General lighting circuit
+    MAX = 8,        ///< Array capacity (contiguous indices 0..7)
+    UNKNOWN = 0xFF, ///< Unassigned, invalid, or uninitialized load
 };
 
 /**
@@ -87,7 +88,7 @@ struct LoadProfile {
  * @brief Intent emitted by any domain controller to the Load Control Task (LCT).
  */
 struct LoadIntent {
-    LoadIndex load_index = LoadIndex::PUMP;
+    LoadIndex load_index = LoadIndex::UNKNOWN;
     LoadDesiredState desired_state = LoadDesiredState::OFF;
     SourcePreference source_preference = SourcePreference::SOLAR_PREFERRED;
     LoadUrgency urgency = LoadUrgency::NORMAL;

@@ -21,7 +21,7 @@ struct SolarPowerUpdate {
  * @brief Telemetry snapshot from an actuator node.
  */
 struct LoadStatusUpdate {
-    LoadIndex load_index = LoadIndex::PUMP;
+    LoadIndex load_index = LoadIndex::UNKNOWN;
     farm::NodeId node_id = farm::NodeId::UNKNOWN;
     uint8_t circuit_id = 0;
     farm::ControlMode control_mode = farm::ControlMode::UNKNOWN;
@@ -37,7 +37,7 @@ struct LoadStatusUpdate {
  * @brief Output action decided by the LoadControlEngine for a specific load.
  */
 struct LoadControlDecision {
-    LoadIndex load_index = LoadIndex::PUMP;
+    LoadIndex load_index = LoadIndex::UNKNOWN;
     farm::NodeId node_id = farm::NodeId::UNKNOWN;
     uint8_t circuit_id = 0;
     bool should_be_on = false;

@@ -41,12 +41,14 @@ espnow::AckStatus LoadControlHandler::handle_payload(const espnow::AppMessage& m
     node_registry_.set_power_profile(sender_node, report.power_profile);
 
     // 2. Map node & circuit to logical LoadIndex
-    LoadIndex load_idx = LoadIndex::PUMP;
+    LoadIndex load_idx = LoadIndex::UNKNOWN;
     if (sender_node == farm::NodeId::PUMP_CONTROL && report.circuit_id == 0) {
         load_idx = LoadIndex::PUMP;
-    } else {
-        // Fallback for future circuits / secondary loads
-        load_idx = static_cast<LoadIndex>(report.circuit_id % static_cast<uint8_t>(LoadIndex::MAX));
+    }
+
+    if (load_idx == LoadIndex::UNKNOWN) {
+        ESP_LOGW(TAG, "Received load status from unmapped node 0x%02X circuit %u", msg.sender_id, report.circuit_id);
+        return espnow::AckStatus::ERROR_INVALID_DATA;
     }
 
     // 3. Populate LoadStatusUpdate
