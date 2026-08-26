@@ -8,6 +8,7 @@
 #include "interfaces/i_hal_system.hpp"
 #include "interfaces/i_hal_timer.hpp"
 #include "interfaces/i_hub_nvs.hpp"
+#include "interfaces/i_node_registry.hpp"
 #include "interfaces/i_nvs_core.hpp"
 #include "interfaces/i_ota_manager.hpp"
 #include "interfaces/i_time_manager.hpp"
@@ -32,6 +33,7 @@ public:
     HubApp(
         INvsCore& core_storage,
         IHubNvs& hub_storage,
+        hub::INodeRegistry& node_registry,
         espnow::IEspNowManager& espnow,
         wifi_manager::IWiFiManager& wifi,
         IOtaManager& ota_manager,
@@ -62,6 +64,7 @@ protected:
 private:
     INvsCore& core_storage_;
     IHubNvs& hub_storage_;
+    hub::INodeRegistry& node_registry_;
     espnow::IEspNowManager& espnow_;
     wifi_manager::IWiFiManager& wifi_;
     IOtaManager& ota_manager_;

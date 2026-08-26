@@ -53,6 +53,28 @@ TEST(NodeRegistryTest, UpdateExistingNodeMetadataAndPowerProfile)
     EXPECT_EQ(registry.get_all_nodes().size(), 1);
 }
 
+TEST(NodeRegistryTest, UpdateFwVersionOnly)
+{
+    NodeRegistry registry;
+    registry.set_node_metadata(farm::NodeId::PUMP_CONTROL, farm::PowerProfile::ALWAYS_ON, 1, 0, 0);
+
+    // Update FW version via dedicated method
+    registry.set_fw_version(farm::NodeId::PUMP_CONTROL, 2, 1, 4);
+
+    farm::NodeMetadata entry{};
+    EXPECT_TRUE(registry.get_node_info(farm::NodeId::PUMP_CONTROL, entry));
+    EXPECT_EQ(entry.power_profile, farm::PowerProfile::ALWAYS_ON);
+    EXPECT_EQ(entry.fw_major, 2);
+    EXPECT_EQ(entry.fw_minor, 1);
+    EXPECT_EQ(entry.fw_patch, 4);
+
+    // Calling on new node sets version with default DEEP_SLEEP profile
+    registry.set_fw_version(farm::NodeId::SOLAR_SENSOR, 1, 0, 5);
+    EXPECT_TRUE(registry.get_node_info(farm::NodeId::SOLAR_SENSOR, entry));
+    EXPECT_EQ(entry.fw_patch, 5);
+    EXPECT_EQ(entry.power_profile, farm::PowerProfile::DEEP_SLEEP);
+}
+
 TEST(NodeRegistryTest, RemoveAndClearNodes)
 {
     NodeRegistry registry;

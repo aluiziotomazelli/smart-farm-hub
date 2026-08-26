@@ -65,6 +65,39 @@ void NodeRegistry::set_power_profile(farm::NodeId node_id, farm::PowerProfile pr
     }
 }
 
+void NodeRegistry::set_fw_version(
+    farm::NodeId node_id,
+    uint8_t major,
+    uint8_t minor,
+    uint8_t patch)
+{
+    if (node_id == farm::NodeId::UNKNOWN || node_id == farm::NodeId::BROADCAST) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    for (auto& entry : nodes_) {
+        if (entry.node_id == node_id) {
+            entry.fw_major = major;
+            entry.fw_minor = minor;
+            entry.fw_patch = patch;
+            return;
+        }
+    }
+
+    // If not registered yet, create default entry with this version
+    for (auto& entry : nodes_) {
+        if (entry.node_id == farm::NodeId::UNKNOWN) {
+            entry.node_id = node_id;
+            entry.fw_major = major;
+            entry.fw_minor = minor;
+            entry.fw_patch = patch;
+            return;
+        }
+    }
+}
+
 farm::PowerProfile NodeRegistry::get_power_profile(farm::NodeId node_id) const
 {
     std::lock_guard<std::mutex> lock(mutex_);

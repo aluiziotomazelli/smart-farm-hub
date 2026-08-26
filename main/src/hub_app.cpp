@@ -26,6 +26,7 @@ SemaphoreHandle_t g_state_mutex = nullptr;
 HubApp::HubApp(
     INvsCore& core_storage,
     IHubNvs& hub_storage,
+    hub::INodeRegistry& node_registry,
     espnow::IEspNowManager& espnow,
     wifi_manager::IWiFiManager& wifi,
     IOtaManager& ota_manager,
@@ -36,6 +37,7 @@ HubApp::HubApp(
     idf_hals::ITimerHAL& hal_timer)
     : core_storage_(core_storage)
     , hub_storage_(hub_storage)
+    , node_registry_(node_registry)
     , espnow_(espnow)
     , wifi_(wifi)
     , ota_manager_(ota_manager)
@@ -161,15 +163,13 @@ esp_err_t HubApp::init_hub_storage()
         I18n::set_language(static_cast<Language>(stats_.language));
     }
 
-    if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
-        for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
-            const auto& info = stats_.node_info[i];
-            if (info.node_id != farm::NodeId::UNKNOWN) {
-                g_system_state.set_node_power_profile(info.node_id, info.power_profile);
-                g_system_state.set_node_fw_version(info.node_id, info.fw_major, info.fw_minor, info.fw_patch);
-            }
+    // Populate in-memory NodeRegistry from persistent storage
+    for (size_t i = 0; i < farm::MAX_HUB_NODES; ++i) {
+        const auto& info = stats_.node_info[i];
+        if (info.node_id != farm::NodeId::UNKNOWN && info.node_id != farm::NodeId::BROADCAST) {
+            node_registry_.set_node_metadata(
+                info.node_id, info.power_profile, info.fw_major, info.fw_minor, info.fw_patch);
         }
-        hal_rtos_.semaphore_give(g_state_mutex);
     }
 
     return ESP_OK;
@@ -373,16 +373,16 @@ void HubApp::on_node_version_received(uint8_t node_id, uint8_t major, uint8_t mi
 {
     auto farm_node_id = static_cast<farm::NodeId>(node_id);
 
-    if (g_state_mutex != nullptr && hal_rtos_.semaphore_take(g_state_mutex, 0) == pdTRUE) {
-        g_system_state.set_node_fw_version(farm_node_id, major, minor, patch);
-        hal_rtos_.semaphore_give(g_state_mutex);
-    }
+    // 1. Update in-memory NodeRegistry for instantaneous UI/system queries
+    node_registry_.set_fw_version(farm_node_id, major, minor, patch);
 
+    // 2. Update persistent stats and save to NVS immediately on new version report
     stats_.set_node_fw_version(farm_node_id, major, minor, patch);
-    pending_hub_commit_ = true;
+    hub_storage_.save_app_data(stats_);
+
     ESP_LOGI(
         TAG,
-        "Received FW version v%u.%u.%u for node 0x%02X, saved to stats and marked NVS commit pending",
+        "Received FW version v%u.%u.%u for node 0x%02X, updated NodeRegistry and saved to NVS",
         major,
         minor,
         patch,

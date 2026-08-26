@@ -152,7 +152,10 @@ extern "C" void app_main()
         ESP_LOGE(TAG, "Failed to initialize DisplayManager");
     }
 
-    HubApp app(nvs_core, nvs_hub, espnow, wifi, ota_manager, app_time_manager, hal_freertos, hal_system, hal_sleep, hal_timer);
+    static UiSnapshot ui_snapshot;
+    static hub::NodeRegistry node_registry;
+
+    HubApp app(nvs_core, nvs_hub, node_registry, espnow, wifi, ota_manager, app_time_manager, hal_freertos, hal_system, hal_sleep, hal_timer);
 
     HubAppConfig config;
 
@@ -167,8 +170,6 @@ extern "C" void app_main()
         espnow, app.get_stats(), nvs_hub, app_time_manager, g_system_state, g_state_mutex, hal_freertos);
     app.set_command_manager(command_mgr);
 
-    static UiSnapshot ui_snapshot;
-    static hub::NodeRegistry node_registry;
     static SunSchedule sun_schedule(-23.5505f, -3.0f); // Default SP coordinates (lat, tz_offset)
     static TankController tank_controller(app_time_manager, sun_schedule);
     static EnergyMonitor energy_monitor(hal_gpio, hal_freertos);

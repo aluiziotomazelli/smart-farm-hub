@@ -26,6 +26,13 @@ public:
     /** @copydoc INodeRegistry::set_power_profile */
     void set_power_profile(farm::NodeId node_id, farm::PowerProfile profile) override;
 
+    /** @copydoc INodeRegistry::set_fw_version */
+    void set_fw_version(
+        farm::NodeId node_id,
+        uint8_t major,
+        uint8_t minor,
+        uint8_t patch) override;
+
     /** @copydoc INodeRegistry::get_power_profile */
     farm::PowerProfile get_power_profile(farm::NodeId node_id) const override;
 

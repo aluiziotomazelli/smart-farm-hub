@@ -38,6 +38,19 @@ public:
     virtual void set_power_profile(farm::NodeId node_id, farm::PowerProfile profile) = 0;
 
     /**
+     * @brief Updates only the firmware version of a node.
+     * @param node_id Target node identifier.
+     * @param major Firmware major version.
+     * @param minor Firmware minor version.
+     * @param patch Firmware patch version.
+     */
+    virtual void set_fw_version(
+        farm::NodeId node_id,
+        uint8_t major,
+        uint8_t minor,
+        uint8_t patch) = 0;
+
+    /**
      * @brief Queries the power profile of a node.
      * @param node_id Target node identifier.
      * @return PowerProfile of the node (DEEP_SLEEP if unknown/unregistered).
