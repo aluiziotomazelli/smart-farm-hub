@@ -27,6 +27,7 @@ HubApp::HubApp(
     INvsCore& core_storage,
     IHubNvs& hub_storage,
     hub::INodeRegistry& node_registry,
+    hub::ICommandManager& cmd_mgr,
     espnow::IEspNowManager& espnow,
     wifi_manager::IWiFiManager& wifi,
     IOtaManager& ota_manager,
@@ -38,6 +39,7 @@ HubApp::HubApp(
     : core_storage_(core_storage)
     , hub_storage_(hub_storage)
     , node_registry_(node_registry)
+    , cmd_mgr_(cmd_mgr)
     , espnow_(espnow)
     , wifi_(wifi)
     , ota_manager_(ota_manager)
@@ -416,7 +418,7 @@ void HubApp::handle_app_command(const AppCommand& cmd)
         }
     }
     else {
-        if (cmd_mgr_ != nullptr && cmd_mgr_->send_command(cmd.target_node, cmd.espnow_cmd, cmd.requires_ack)) {
+        if (cmd_mgr_.send_command(cmd.target_node, cmd.espnow_cmd, cmd.requires_ack)) {
             ESP_LOGI(
                 TAG,
                 "Command 0x%02X processed for target node 0x%02X",

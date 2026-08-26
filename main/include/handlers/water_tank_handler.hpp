@@ -1,8 +1,8 @@
 // main/include/handlers/water_tank_handler.hpp
 #pragma once
 
-#include "command_manager.hpp"
 #include "farm_protocol_types.hpp"
+#include "interfaces/i_command_manager.hpp"
 #include "interfaces/i_hal_timer.hpp"
 #include "interfaces/i_load_control_task.hpp"
 #include "interfaces/i_node_registry.hpp"
@@ -24,7 +24,7 @@ public:
         INodeRegistry& node_registry,
         TankController& tank_controller,
         ILoadControlTask& load_control_task,
-        CommandManager& command_mgr,
+        ICommandManager& command_mgr,
         idf_hals::ITimerHAL& timer);
 
     ~WaterTankHandler() override = default;
@@ -40,7 +40,7 @@ private:
     INodeRegistry& node_registry_;
     TankController& tank_controller_;
     ILoadControlTask& load_control_task_;
-    CommandManager& command_mgr_;
+    ICommandManager& command_mgr_;
     idf_hals::ITimerHAL& timer_;
 };
 

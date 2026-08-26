@@ -39,6 +39,7 @@ idf_component_register(
         "../../../components/ui_inputs/host_test/common"
         "../../../components/espnow_manager/include/mocks"
         "../../../components/time_manager/host_test/mocks"
+        "../../../host_test_common"
     REQUIRES 
         gtest
         smart-farm-common

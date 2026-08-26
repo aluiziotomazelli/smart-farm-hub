@@ -22,7 +22,7 @@ TEST(NullEnergyMonitorTest, AlwaysReturnsTrue)
 
 TEST(EnergyMonitorTest, UninitializedFallsBackToTrue)
 {
-    MockHalGpio mock_gpio;
+    MockGpioHAL mock_gpio;
     MockHalFreertos mock_freertos;
     EnergyMonitor monitor(mock_gpio, mock_freertos);
 
@@ -33,7 +33,7 @@ TEST(EnergyMonitorTest, UninitializedFallsBackToTrue)
 
 TEST(EnergyMonitorTest, InitConfiguresGpiosWithoutInterrupts)
 {
-    MockHalGpio mock_gpio;
+    MockGpioHAL mock_gpio;
     MockHalFreertos mock_freertos;
     EnergyMonitor monitor(mock_gpio, mock_freertos);
 
@@ -52,7 +52,7 @@ TEST(EnergyMonitorTest, InitConfiguresGpiosWithoutInterrupts)
 
 TEST(EnergyMonitorTest, InitConfiguresInterruptsAndAttachesHandlers)
 {
-    MockHalGpio mock_gpio;
+    MockGpioHAL mock_gpio;
     MockHalFreertos mock_freertos;
     SemaphoreHandle_t dummy_sem = reinterpret_cast<SemaphoreHandle_t>(0x1234);
 
@@ -81,9 +81,9 @@ TEST(EnergyMonitorTest, InitConfiguresInterruptsAndAttachesHandlers)
 
 TEST(EnergyMonitorTest, InitFailsFastWhenInterruptsEnabledWithoutSemaphore)
 {
-    MockHalGpio mock_gpio;
+    MockGpioHAL mock_gpio;
     MockHalFreertos mock_freertos;
-    EnergyMonitor monitor(mock_gpio, mock_freertos, nullptr);
+    EnergyMonitor monitor(mock_gpio, mock_freertos);
 
     EnergyMonitorConfig cfg{
         .solar_gpio = GPIO_NUM_10,
@@ -97,9 +97,9 @@ TEST(EnergyMonitorTest, InitFailsFastWhenInterruptsEnabledWithoutSemaphore)
 
 TEST(EnergyMonitorTest, SetSignalSemaphoreAllowsInitWithoutConfigSemaphore)
 {
-    MockHalGpio mock_gpio;
+    MockGpioHAL mock_gpio;
     MockHalFreertos mock_freertos;
-    EnergyMonitor monitor(mock_gpio, mock_freertos, nullptr);
+    EnergyMonitor monitor(mock_gpio, mock_freertos);
 
     SemaphoreHandle_t dummy_sem = reinterpret_cast<SemaphoreHandle_t>(0x5678);
     monitor.set_signal_semaphore(dummy_sem);
@@ -124,7 +124,7 @@ TEST(EnergyMonitorTest, SetSignalSemaphoreAllowsInitWithoutConfigSemaphore)
 
 TEST(EnergyMonitorTest, ReadsActiveHighAndActiveLowCorrectly)
 {
-    MockHalGpio mock_gpio;
+    MockGpioHAL mock_gpio;
     MockHalFreertos mock_freertos;
     EnergyMonitor monitor(mock_gpio, mock_freertos);
 

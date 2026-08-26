@@ -7,14 +7,11 @@
 #include "handlers/water_tank_handler.hpp"
 #include "mock_espnow_manager.hpp"
 #include "mock_hal_freertos.hpp"
-#include "mock_hal_nvs.hpp"
 #include "mock_hal_timer.hpp"
 #include "mock_load_control_task.hpp"
 #include "mock_time_manager.hpp"
 #include "node_registry.hpp"
-#include "null_hub_nvs.hpp"
 #include "sun_schedule.hpp"
-#include "system_state.hpp"
 #include "tank_controller.hpp"
 #include "ui_snapshot.hpp"
 
@@ -28,22 +25,20 @@ protected:
     UiSnapshot ui_snapshot_;
     NodeRegistry node_registry_;
     NiceMock<time_manager::MockTimeManager> mock_time_mgr_;
-    SunSchedule sun_schedule_{ -23.5505f, -46.6333f, -3.0f }; // SP coords
+    SunSchedule sun_schedule_{ -23.5505f, -3.0f }; // SP coords
     TankController tank_controller_{ mock_time_mgr_, sun_schedule_ };
     NiceMock<MockLoadControlTask> mock_lct_;
     NiceMock<espnow::MockEspNowManager> mock_espnow_;
-    HubStats stats_;
-    NullHubNvs null_nvs_;
-    SystemState dummy_state_;
-    SemaphoreHandle_t dummy_mutex_{ reinterpret_cast<SemaphoreHandle_t>(0x1234) };
-    NiceMock<idf_hals::MockHalFreertos> mock_rtos_;
-    CommandManager command_mgr_{ mock_espnow_, stats_, null_nvs_, mock_time_mgr_, dummy_state_, dummy_mutex_, mock_rtos_ };
+    CommandManager command_mgr_{ mock_espnow_, node_registry_, mock_time_mgr_ };
     NiceMock<idf_hals::MockTimerHAL> mock_timer_;
 
     void SetUp() override
     {
+        // 2023-11-15 12:00:00 local (BRT = UTC-3) => 15:00 UTC => 1700060400 s
+        constexpr time_t NOON_EPOCH = 1700060400;
         ON_CALL(mock_timer_, get_time_us()).WillByDefault(Return(1000000ULL)); // 1000ms
-        ON_CALL(mock_time_mgr_, get_timestamp_ms()).WillByDefault(Return(1700000000000ULL));
+        ON_CALL(mock_time_mgr_, get_timestamp_ms()).WillByDefault(Return(static_cast<uint64_t>(NOON_EPOCH) * 1000ULL));
+        ON_CALL(mock_time_mgr_, get_timestamp_sec()).WillByDefault(Return(NOON_EPOCH));
     }
 };
 
@@ -115,5 +110,5 @@ TEST_F(WaterTankHandlerTest, PostHandlePayload_DispatchesNodeWakeToCommandManage
 
     handler.post_handle_payload(msg);
 
-    EXPECT_EQ(stats_.messages_received, 1);
+    EXPECT_EQ(command_mgr_.get_messages_received(), 1);
 }

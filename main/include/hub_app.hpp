@@ -34,6 +34,7 @@ public:
         INvsCore& core_storage,
         IHubNvs& hub_storage,
         hub::INodeRegistry& node_registry,
+        hub::ICommandManager& cmd_mgr,
         espnow::IEspNowManager& espnow,
         wifi_manager::IWiFiManager& wifi,
         IOtaManager& ota_manager,
@@ -47,7 +48,6 @@ public:
     init(const HubAppConfig& config = {}, QueueHandle_t app_cmd_queue = nullptr, QueueHandle_t rx_queue = nullptr);
     void run();
 
-    void set_command_manager(hub::CommandManager& cmd_mgr) { cmd_mgr_ = &cmd_mgr; }
     void handle_app_command(const AppCommand& cmd);
     void on_node_version_received(uint8_t node_id, uint8_t major, uint8_t minor, uint8_t patch);
     HubStats& get_stats() { return stats_; }
@@ -65,11 +65,11 @@ private:
     INvsCore& core_storage_;
     IHubNvs& hub_storage_;
     hub::INodeRegistry& node_registry_;
+    hub::ICommandManager& cmd_mgr_;
     espnow::IEspNowManager& espnow_;
     wifi_manager::IWiFiManager& wifi_;
     IOtaManager& ota_manager_;
     time_manager::ITimeManager& time_manager_;
-    hub::CommandManager* cmd_mgr_{nullptr};
     idf_hals::IHalFreertos& hal_rtos_;
     idf_hals::ISystemHAL& hal_system_;
     idf_hals::ISleepHAL& hal_sleep_;

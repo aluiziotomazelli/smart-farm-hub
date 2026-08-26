@@ -311,8 +311,8 @@ void LoadControlTask::run_loop()
         // 4. Run energy arbitration and dispatch decisions
         evaluate_and_dispatch(now_ms);
 
-        // 5. Refresh UI Snapshot at ~10 Hz (time-based check)
-        if (snapshot_dirty_ && (now_ms - last_ui_refresh_ms_ >= static_cast<int64_t>(config_.ui_refresh_interval_ms))) {
+        // 5. Refresh UI Snapshot when dirty
+        if (snapshot_dirty_) {
             refresh_ui_snapshot();
             snapshot_dirty_ = false;
             last_ui_refresh_ms_ = now_ms;

@@ -15,7 +15,7 @@ namespace hub {
 LoadControlHandler::LoadControlHandler(
     INodeRegistry& node_registry,
     ILoadControlTask& load_control_task,
-    CommandManager& command_mgr,
+    ICommandManager& command_mgr,
     idf_hals::ITimerHAL& timer)
     : node_registry_(node_registry)
     , load_control_task_(load_control_task)

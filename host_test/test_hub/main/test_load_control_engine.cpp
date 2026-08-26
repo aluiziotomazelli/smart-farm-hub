@@ -126,14 +126,15 @@ TEST_F(LoadControlEngineTest, InsufficientSolarMigratesPumpToGridIfAllowed)
     // 800W Solar: Freezer (700W) running on solar, Pump (600W) cannot fit
     engine_.on_solar_update({.power_w = 800, .irradiance_wm2 = 400, .is_night_mode = false, .timestamp_ms = 1000});
 
-    engine_.on_load_intent({.load_index = LoadIndex::FREEZER, .desired_state = LoadDesiredState::ON, .urgency = LoadUrgency::NORMAL});
-    engine_.on_load_intent({.load_index = LoadIndex::PUMP, .desired_state = LoadDesiredState::ON, .urgency = LoadUrgency::CRITICAL, .source_preference = SourcePreference::SOLAR_PREFERRED});
+    // Freezer is CRITICAL (700W), Pump is NORMAL (600W)
+    engine_.on_load_intent({.load_index = LoadIndex::FREEZER, .desired_state = LoadDesiredState::ON, .urgency = LoadUrgency::CRITICAL});
+    engine_.on_load_intent({.load_index = LoadIndex::PUMP, .desired_state = LoadDesiredState::ON, .source_preference = SourcePreference::SOLAR_PREFERRED, .urgency = LoadUrgency::NORMAL});
 
     engine_.evaluate_arbitration();
 
-    // Freezer stays on solar (700W)
+    // Freezer (CRITICAL) takes solar (700W)
     EXPECT_EQ(engine_.get_load(LoadIndex::FREEZER).assigned_source, farm::PowerSource::SOLAR);
-    // Pump goes to GRID (600W)
+    // Pump (NORMAL, cannot fit in 100W remaining) migrates to GRID (600W)
     EXPECT_EQ(engine_.get_load(LoadIndex::PUMP).assigned_source, farm::PowerSource::GRID);
 }
 
@@ -147,7 +148,7 @@ TEST_F(LoadControlEngineTest, ScenarioC_CapturesCompressorOffCycleForEpisodicLoa
     engine_.on_load_status({.load_index = LoadIndex::FREEZER, .active_source = farm::PowerSource::SOLAR, .load_state = farm::LoadState::RUNNING, .power_w = 700, .timestamp_ms = 1000});
 
     // Pump (episodic load) wants Opportunistic run
-    engine_.on_load_intent({.load_index = LoadIndex::PUMP, .desired_state = LoadDesiredState::ON, .urgency = LoadUrgency::OPPORTUNISTIC, .source_preference = SourcePreference::SOLAR_PREFERRED});
+    engine_.on_load_intent({.load_index = LoadIndex::PUMP, .desired_state = LoadDesiredState::ON, .source_preference = SourcePreference::SOLAR_PREFERRED, .urgency = LoadUrgency::OPPORTUNISTIC});
 
     engine_.evaluate_arbitration();
     // Pump enters WAITING_FOR_WINDOW

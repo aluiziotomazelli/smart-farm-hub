@@ -55,7 +55,10 @@ TEST_F(LoadControlTaskTest, PostEventsBeforeInitReturnsError)
     SolarPowerUpdate solar{500, 800, false, 1000};
     EXPECT_EQ(task.post_solar_update(solar), ESP_ERR_INVALID_STATE);
 
-    LoadIntent intent{LoadIndex::PUMP, farm::NodeId::PUMP_CONTROL, 0, LoadDesiredState::ON};
+    LoadIntent intent{
+        .load_index = LoadIndex::PUMP,
+        .desired_state = LoadDesiredState::ON,
+    };
     EXPECT_EQ(task.post_load_intent(intent), ESP_ERR_INVALID_STATE);
 }
 
@@ -67,10 +70,27 @@ TEST_F(LoadControlTaskTest, PostEventsAfterInitSucceeds)
     SolarPowerUpdate solar{1200, 950, false, 1000};
     EXPECT_EQ(task.post_solar_update(solar), ESP_OK);
 
-    LoadIntent intent{LoadIndex::PUMP, farm::NodeId::PUMP_CONTROL, 0, LoadDesiredState::ON, LoadUrgency::NORMAL, 600, 1800, SourcePreference::SOLAR_ONLY};
+    LoadIntent intent{
+        .load_index = LoadIndex::PUMP,
+        .desired_state = LoadDesiredState::ON,
+        .source_preference = SourcePreference::SOLAR_ONLY,
+        .urgency = LoadUrgency::NORMAL,
+        .max_hold_duration_s = 600,
+        .estimated_on_duration_s = 1800,
+    };
     EXPECT_EQ(task.post_load_intent(intent), ESP_OK);
 
-    LoadStatusUpdate status{LoadIndex::PUMP, farm::NodeId::PUMP_CONTROL, 0, farm::ControlMode::AUTO, farm::PowerSource::SOLAR, farm::LoadState::RUNNING, 450, 60, 1000};
+    LoadStatusUpdate status{
+        .load_index = LoadIndex::PUMP,
+        .node_id = farm::NodeId::PUMP_CONTROL,
+        .circuit_id = 0,
+        .control_mode = farm::ControlMode::AUTO,
+        .active_source = farm::PowerSource::SOLAR,
+        .load_state = farm::LoadState::RUNNING,
+        .power_w = 450,
+        .runtime_s = 60,
+        .timestamp_ms = 1000,
+    };
     EXPECT_EQ(task.post_load_status(status), ESP_OK);
 
     EXPECT_EQ(task.notify_energy_availability(true, true), ESP_OK);
@@ -93,14 +113,13 @@ TEST_F(LoadControlTaskTest, RealTaskExecutesArbitrationAndUpdatesUiSnapshot)
 
     // 2. Post Intent to turn ON Pump (450W)
     LoadIntent pump_intent{
-        LoadIndex::PUMP,
-        farm::NodeId::PUMP_CONTROL,
-        0,
-        LoadDesiredState::ON,
-        LoadUrgency::NORMAL,
-        600,
-        1800,
-        SourcePreference::SOLAR_ONLY};
+        .load_index = LoadIndex::PUMP,
+        .desired_state = LoadDesiredState::ON,
+        .source_preference = SourcePreference::SOLAR_ONLY,
+        .urgency = LoadUrgency::NORMAL,
+        .max_hold_duration_s = 600,
+        .estimated_on_duration_s = 1800,
+    };
     EXPECT_EQ(task.post_load_intent(pump_intent), ESP_OK);
 
     // Give real FreeRTOS task ~150ms to select from QueueSet, evaluate Knapsack and refresh UiSnapshot

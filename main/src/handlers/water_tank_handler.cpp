@@ -17,7 +17,7 @@ WaterTankHandler::WaterTankHandler(
     INodeRegistry& node_registry,
     TankController& tank_controller,
     ILoadControlTask& load_control_task,
-    CommandManager& command_mgr,
+    ICommandManager& command_mgr,
     idf_hals::ITimerHAL& timer)
     : ui_snapshot_(ui_snapshot)
     , node_registry_(node_registry)

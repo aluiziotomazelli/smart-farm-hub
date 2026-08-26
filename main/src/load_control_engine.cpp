@@ -128,11 +128,15 @@ void LoadControlEngine::evaluate_episodic_windows(int64_t now_ms)
 
         uint16_t load_watts = get_effective_load_watts(load);
 
-        // Calculate available live headroom if this episodic load were not counted
-        int32_t live_headroom_w = static_cast<int32_t>(solar_power_w_) - static_cast<int32_t>(get_allocated_solar_w());
-        if (load.assigned_source == farm::PowerSource::SOLAR && load.assigned_on) {
-            live_headroom_w += load_watts;
+        // Calculate available live headroom against current active continuous load consumption
+        uint16_t continuous_load_w = 0;
+        for (size_t c = 0; c < static_cast<size_t>(LoadIndex::MAX); ++c) {
+            if (loads_[c].profile.is_continuous &&
+                loads_[c].intent.desired_state == LoadDesiredState::ON) {
+                continuous_load_w += get_effective_load_watts(loads_[c]);
+            }
         }
+        int32_t live_headroom_w = static_cast<int32_t>(solar_power_w_) - static_cast<int32_t>(continuous_load_w);
 
         switch (load.window_state) {
         case EpisodicWindowState::IDLE: {
@@ -220,21 +224,16 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
         }
     }
 
-    // 2. Sort candidates for Solar Allocation according to Section 5.9 (Table B + Tiebreakers)
-    // Priority order:
+    // 2. Sort candidates for Solar Allocation:
     // Higher urgency first (CRITICAL > NORMAL > OPPORTUNISTIC > SHEDDABLE)
-    // Continuous loads beat Discretionary loads within the same tier
-    // Smaller max_hold_duration_s beats larger hold duration
-    // Lower priority_rank (NVS configured) beats higher rank
+    // For equal urgency, prioritize heavier continuous loads over lighter ones to maximize solar utilisation (Knapsack)
+    // Lower priority_rank as final tiebreaker
     std::sort(active_candidates.begin(), active_candidates.end(), [](const Candidate& a, const Candidate& b) {
         if (a.urgency != b.urgency) {
             return static_cast<uint8_t>(a.urgency) > static_cast<uint8_t>(b.urgency);
         }
-        if (a.is_continuous != b.is_continuous) {
-            return a.is_continuous > b.is_continuous; // true > false
-        }
-        if (a.max_hold_s != b.max_hold_s) {
-            return a.max_hold_s < b.max_hold_s; // Smaller hold duration stays on solar longer
+        if (a.watts != b.watts) {
+            return a.watts > b.watts; // Knapsack greedy: larger watts first to maximize solar absorption
         }
         return a.priority_rank < b.priority_rank;
     });
@@ -245,19 +244,15 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
     for (auto& cand : active_candidates) {
         bool can_use_solar = solar_available_ && (remaining_solar_w >= cand.watts);
 
-        // Generic handling for any episodic load window FSM
-        if (!cand.is_continuous) {
+        // For opportunistic episodic loads waiting for thermal off-cycle window
+        if (!cand.is_continuous && cand.urgency == LoadUrgency::OPPORTUNISTIC) {
             auto win_state = loads_[cand.index].window_state;
             if (win_state == EpisodicWindowState::WAITING_FOR_WINDOW) {
-                // Waiting for window -> Don't assign yet (neither solar nor grid)
-                continue;
-            }
-            if (win_state == EpisodicWindowState::RUNNING_WINDOW) {
-                can_use_solar = solar_available_; // Window captured!
+                continue; // Hold in waiting state
             }
         }
 
-        if (can_use_solar && cand.source_pref != SourcePreference::ANY) {
+        if (can_use_solar) {
             loads_[cand.index].assigned_on = true;
             loads_[cand.index].assigned_source = farm::PowerSource::SOLAR;
             loads_[cand.index].current_watchdog_s = cand.watchdog_s;
@@ -280,7 +275,6 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
     for (auto& cand : active_candidates) {
         if (loads_[cand.index].assigned_on &&
             loads_[cand.index].assigned_source == farm::PowerSource::GRID &&
-            cand.source_pref != SourcePreference::ANY &&
             remaining_solar_w >= cand.watts) {
             loads_[cand.index].assigned_source = farm::PowerSource::SOLAR;
             remaining_solar_w -= cand.watts;

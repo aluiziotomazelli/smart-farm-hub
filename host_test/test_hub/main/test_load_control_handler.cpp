@@ -7,14 +7,10 @@
 #include "handlers/load_control_handler.hpp"
 #include "mock_espnow_manager.hpp"
 #include "mock_hal_freertos.hpp"
-#include "mock_hal_nvs.hpp"
 #include "mock_hal_timer.hpp"
 #include "mock_load_control_task.hpp"
-#include "mock_persistence_backend.hpp"
 #include "mock_time_manager.hpp"
 #include "node_registry.hpp"
-#include "null_hub_nvs.hpp"
-#include "system_state.hpp"
 
 using namespace hub;
 using ::testing::_;
@@ -27,18 +23,12 @@ protected:
     NodeRegistry node_registry_;
     NiceMock<MockLoadControlTask> mock_lct_;
     NiceMock<espnow::MockEspNowManager> mock_espnow_;
-    HubStats stats_;
-    NullHubNvs null_nvs_;
     time_manager::MockTimeManager mock_time_;
-    SystemState dummy_state_;
-    SemaphoreHandle_t dummy_mutex_{ reinterpret_cast<SemaphoreHandle_t>(0x1234) };
-    NiceMock<idf_hals::MockHalFreertos> mock_rtos_;
-    CommandManager command_mgr_{ mock_espnow_, stats_, null_nvs_, mock_time_, dummy_state_, dummy_mutex_, mock_rtos_ };
+    CommandManager command_mgr_{ mock_espnow_, node_registry_, mock_time_ };
     NiceMock<idf_hals::MockTimerHAL> mock_timer_;
 
     void SetUp() override
     {
-        stats_.reset();
         ON_CALL(mock_timer_, get_time_us()).WillByDefault(Return(1000000ULL)); // 1000 ms
         ON_CALL(mock_time_, get_timestamp_ms()).WillByDefault(Return(1700000000000ULL));
     }
@@ -106,5 +96,5 @@ TEST_F(LoadControlHandlerTest, PostHandlePayload_DispatchesNodeWakeToCommandMana
 
     handler.post_handle_payload(msg);
 
-    EXPECT_EQ(stats_.messages_received, 1);
+    EXPECT_EQ(command_mgr_.get_messages_received(), 1);
 }

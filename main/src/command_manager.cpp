@@ -1,3 +1,4 @@
+// main/src/command_manager.cpp
 #include <cstdint>
 
 #undef LOG_LOCAL_LEVEL
@@ -12,30 +13,17 @@ namespace hub {
 
 CommandManager::CommandManager(
     espnow::IEspNowManager& espnow,
-    HubStats& stats,
-    IHubNvs& hub_storage,
-    time_manager::ITimeManager& time_manager,
-    SystemState& state,
-    SemaphoreHandle_t state_mutex,
-    idf_hals::IHalFreertos& rtos)
+    hub::INodeRegistry& node_registry,
+    time_manager::ITimeManager& time_manager)
     : espnow_(espnow)
-    , stats_(stats)
-    , hub_storage_(hub_storage)
+    , node_registry_(node_registry)
     , time_manager_(time_manager)
-    , state_(state)
-    , state_mutex_(state_mutex)
-    , rtos_(rtos)
 {
 }
 
 bool CommandManager::send_command(farm::NodeId target_node, espnow::CommandType cmd, bool requires_ack)
 {
-    farm::PowerProfile profile = farm::PowerProfile::DEEP_SLEEP;
-
-    if (state_mutex_ != nullptr && rtos_.semaphore_take(state_mutex_, pdMS_TO_TICKS(50)) == pdTRUE) {
-        profile = state_.get_node_power_profile(target_node);
-        rtos_.semaphore_give(state_mutex_);
-    }
+    farm::PowerProfile profile = node_registry_.get_power_profile(target_node);
 
     if (profile == farm::PowerProfile::ALWAYS_ON) {
         ESP_LOGI(
@@ -46,13 +34,13 @@ bool CommandManager::send_command(farm::NodeId target_node, espnow::CommandType 
 
         esp_err_t err = dispatch_single_command(target_node, cmd, requires_ack);
         if (err == ESP_OK) {
-            stats_.commands_sent++;
+            commands_sent_++;
             return true;
         }
 
         ESP_LOGW(
             TAG,
-            "Instant dispatch to 0x%02X failed (%s), fallback enqueuing in FIFO...",
+            "Instant dispatch to 0x%02X failed (%s), fallback enqueuing in RAM FIFO...",
             static_cast<uint8_t>(target_node),
             esp_err_to_name(err));
     }
@@ -62,32 +50,38 @@ bool CommandManager::send_command(farm::NodeId target_node, espnow::CommandType 
 
 bool CommandManager::push_pending_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack)
 {
-    bool success = stats_.push_pending(node_id, cmd, requires_ack);
-    if (success) {
-        hub_storage_.save_app_data(stats_);
-        ESP_LOGI(
-            TAG,
-            "Armed command 0x%02X (requires_ack=%d) in FIFO for node 0x%02X",
-            static_cast<uint8_t>(cmd),
-            requires_ack,
-            static_cast<uint8_t>(node_id));
+    if (node_id == farm::NodeId::UNKNOWN || node_id == farm::NodeId::BROADCAST) {
+        return false;
     }
-    else {
+
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+
+    if (pending_queue_.full()) {
         ESP_LOGW(
             TAG,
-            "Failed to arm command 0x%02X for node 0x%02X (FIFO queue full or capacity limit)",
+            "Failed to arm command 0x%02X for node 0x%02X (RAM FIFO queue full)",
             static_cast<uint8_t>(cmd),
             static_cast<uint8_t>(node_id));
+        return false;
     }
-    return success;
+
+    pending_queue_.push(PendingCommandItem{node_id, cmd, requires_ack});
+    ESP_LOGI(
+        TAG,
+        "Armed command 0x%02X (requires_ack=%d) in RAM FIFO for node 0x%02X (queue depth: %zu)",
+        static_cast<uint8_t>(cmd),
+        requires_ack,
+        static_cast<uint8_t>(node_id),
+        pending_queue_.size());
+
+    return true;
 }
 
 void CommandManager::process_node_wake(farm::NodeId node_id, uint64_t node_unix_time_ms)
 {
-    stats_.messages_received++;
+    messages_received_++;
     check_and_arm_time_sync(node_id, node_unix_time_ms);
     dispatch_pending_commands(node_id);
-    hub_storage_.save_app_data(stats_);
 }
 
 void CommandManager::check_and_arm_time_sync(farm::NodeId node_id, uint64_t node_unix_time_ms)
@@ -119,24 +113,33 @@ void CommandManager::check_and_arm_time_sync(farm::NodeId node_id, uint64_t node
 
 void CommandManager::dispatch_pending_commands(farm::NodeId node_id)
 {
-    PendingNodeCommand pending;
-    while (stats_.pop_pending(node_id, pending)) {
-        esp_err_t err = dispatch_single_command(node_id, pending.command, pending.requires_ack);
-        if (err == ESP_OK) {
-            stats_.commands_sent++;
-            ESP_LOGI(
-                TAG,
-                "Command 0x%02X successfully dispatched from FIFO to node 0x%02X",
-                static_cast<uint8_t>(pending.command),
-                static_cast<uint8_t>(node_id));
-        }
-        else {
-            ESP_LOGE(
-                TAG,
-                "Failed to dispatch FIFO command 0x%02X to node 0x%02X: %s",
-                static_cast<uint8_t>(pending.command),
-                static_cast<uint8_t>(node_id),
-                esp_err_to_name(err));
+    std::lock_guard<std::mutex> lock(queue_mutex_);
+
+    size_t count = pending_queue_.size();
+    for (size_t i = 0; i < count; ++i) {
+        PendingCommandItem item = pending_queue_.front();
+        pending_queue_.pop();
+
+        if (item.node_id == node_id) {
+            esp_err_t err = dispatch_single_command(node_id, item.command, item.requires_ack);
+            if (err == ESP_OK) {
+                commands_sent_++;
+                ESP_LOGI(
+                    TAG,
+                    "Command 0x%02X successfully dispatched from RAM FIFO to node 0x%02X",
+                    static_cast<uint8_t>(item.command),
+                    static_cast<uint8_t>(node_id));
+            } else {
+                ESP_LOGE(
+                    TAG,
+                    "Failed to dispatch RAM FIFO command 0x%02X to node 0x%02X: %s",
+                    static_cast<uint8_t>(item.command),
+                    static_cast<uint8_t>(node_id),
+                    esp_err_to_name(err));
+            }
+        } else {
+            // Keep items for other nodes in the queue
+            pending_queue_.push(item);
         }
     }
 }
@@ -153,10 +156,85 @@ esp_err_t CommandManager::broadcast_tank_level(
     update_pkt.backup_mode_active = backup_mode_active;
     update_pkt.float_switch_is_full = float_switch_is_full;
 
-    ESP_LOGI(TAG, "Broadcasting TANK_LEVEL_UPDATE to PUMP_CONTROL");
+    ESP_LOGI(
+        TAG,
+        "Broadcasting TANK_LEVEL_UPDATE: tank=%u, level=%u permille, backup=%d, full=%d to PUMP_CONTROL",
+        tank_id,
+        level_permille,
+        backup_mode_active,
+        float_switch_is_full);
 
     return espnow_.send_data(
-        farm::NodeId::PUMP_CONTROL, farm::PayloadType::TANK_LEVEL_UPDATE, &update_pkt, sizeof(update_pkt), false);
+        farm::NodeId::PUMP_CONTROL,
+        farm::PayloadType::TANK_LEVEL_UPDATE,
+        &update_pkt,
+        sizeof(update_pkt),
+        false);
+}
+
+bool CommandManager::dispatch_decision(const LoadControlDecision& decision)
+{
+    if (decision.should_be_on) {
+        farm::LoadOnCommand cmd{
+            .circuit_id = decision.circuit_id,
+            .power_source = decision.target_source,
+            .watchdog_timeout_s = static_cast<uint16_t>(decision.watchdog_s),
+        };
+
+        ESP_LOGI(
+            TAG,
+            "Dispatching LOAD_ON to node 0x%02X (circuit=%u, source=%u, watchdog=%u s)",
+            static_cast<uint8_t>(decision.node_id),
+            decision.circuit_id,
+            static_cast<uint8_t>(decision.target_source),
+            static_cast<unsigned>(decision.watchdog_s));
+
+        esp_err_t err = espnow_.send_command(
+            decision.node_id,
+            static_cast<espnow::CommandType>(farm::CommandType::LOAD_ON),
+            &cmd,
+            sizeof(cmd),
+            true);
+
+        if (err == ESP_OK) {
+            commands_sent_++;
+            return true;
+        }
+        ESP_LOGE(
+            TAG,
+            "Failed to send LOAD_ON to node 0x%02X: %s",
+            static_cast<uint8_t>(decision.node_id),
+            esp_err_to_name(err));
+        return false;
+    } else {
+        farm::LoadOffCommand cmd{
+            .circuit_id = decision.circuit_id,
+        };
+
+        ESP_LOGI(
+            TAG,
+            "Dispatching LOAD_OFF to node 0x%02X (circuit=%u)",
+            static_cast<uint8_t>(decision.node_id),
+            decision.circuit_id);
+
+        esp_err_t err = espnow_.send_command(
+            decision.node_id,
+            static_cast<espnow::CommandType>(farm::CommandType::LOAD_OFF),
+            &cmd,
+            sizeof(cmd),
+            true);
+
+        if (err == ESP_OK) {
+            commands_sent_++;
+            return true;
+        }
+        ESP_LOGE(
+            TAG,
+            "Failed to send LOAD_OFF to node 0x%02X: %s",
+            static_cast<uint8_t>(decision.node_id),
+            esp_err_to_name(err));
+        return false;
+    }
 }
 
 esp_err_t CommandManager::dispatch_single_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack)
@@ -173,9 +251,6 @@ esp_err_t CommandManager::dispatch_single_command(farm::NodeId node_id, espnow::
     return espnow_.send_command(node_id, cmd, nullptr, 0, requires_ack);
 }
 
-// ====================================================================
-// Private helpers
-// ====================================================================
 esp_err_t CommandManager::create_sync_time_packet(farm::TimeSyncCommand& out_sync_cmd) const
 {
     if (!time_manager_.is_synchronized()) {

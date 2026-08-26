@@ -17,7 +17,7 @@ SolarSensorHandler::SolarSensorHandler(
     UiSnapshot& ui_snapshot,
     INodeRegistry& node_registry,
     ILoadControlTask& load_control_task,
-    CommandManager& command_mgr,
+    ICommandManager& command_mgr,
     idf_hals::ITimerHAL& timer,
     solar::SolarSystemConfig solar_cfg)
     : ui_snapshot_(ui_snapshot)

@@ -154,8 +154,21 @@ extern "C" void app_main()
 
     static UiSnapshot ui_snapshot;
     static hub::NodeRegistry node_registry;
+    static hub::CommandManager command_mgr(espnow, node_registry, app_time_manager);
 
-    HubApp app(nvs_core, nvs_hub, node_registry, espnow, wifi, ota_manager, app_time_manager, hal_freertos, hal_system, hal_sleep, hal_timer);
+    HubApp app(
+        nvs_core,
+        nvs_hub,
+        node_registry,
+        command_mgr,
+        espnow,
+        wifi,
+        ota_manager,
+        app_time_manager,
+        hal_freertos,
+        hal_system,
+        hal_sleep,
+        hal_timer);
 
     HubAppConfig config;
 
@@ -166,25 +179,12 @@ extern "C" void app_main()
         return;
     }
 
-    static hub::CommandManager command_mgr(
-        espnow, app.get_stats(), nvs_hub, app_time_manager, g_system_state, g_state_mutex, hal_freertos);
-    app.set_command_manager(command_mgr);
-
     static SunSchedule sun_schedule(-23.5505f, -3.0f); // Default SP coordinates (lat, tz_offset)
     static TankController tank_controller(app_time_manager, sun_schedule);
     static EnergyMonitor energy_monitor(hal_gpio, hal_freertos);
 
-    // Dummy actuator dispatcher until CommandManager implements ILoadActuatorDispatcher
-    class DefaultActuatorDispatcher : public hub::ILoadActuatorDispatcher {
-    public:
-        bool dispatch_decision(const LoadControlDecision& decision) override {
-            (void)decision;
-            return true;
-        }
-    };
-    static DefaultActuatorDispatcher default_dispatcher;
     static hub::LoadControlTask load_control_task(
-        hal_freertos, app_time_manager, ui_snapshot, default_dispatcher, energy_monitor);
+        hal_freertos, app_time_manager, ui_snapshot, command_mgr, energy_monitor);
     load_control_task.init();
     load_control_task.start();
 
