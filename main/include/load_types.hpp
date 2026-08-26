@@ -6,7 +6,7 @@
 #include "farm_protocol_types.hpp"
 
 /**
- * @brief Logical index into the SystemState::loads[] array.
+ * @brief Logical index into the UiSnapshotData::loads[] array and LoadControlEngine.
  *
  * Provides semantic access to each controlled or monitored load.
  * Add future loads before MAX and update MAX accordingly.

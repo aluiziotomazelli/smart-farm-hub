@@ -10,7 +10,6 @@
 #include "wifi_manager.hpp"
 #include "espnow_manager.hpp"
 #include "secrets.hpp" // WIFI_SSID, WIFI_PASS, SERVER_URL (not committed)
-#include "system_state.hpp"
 #include "version_helper.hpp"
 #include "i18n/i18n.hpp"
 
@@ -19,9 +18,6 @@ static const char* TAG = "HubApp";
 static constexpr uint16_t START_WIFI_TIMEOUT_MS = 10000;
 static constexpr uint16_t CONNECT_WIFI_TIMEOUT_MS = 15000;
 static constexpr uint16_t DISCONNECT_WIFI_TIMEOUT_MS = 2000;
-
-SystemState g_system_state;
-SemaphoreHandle_t g_state_mutex = nullptr;
 
 HubApp::HubApp(
     INvsCore& core_storage,
@@ -33,6 +29,11 @@ HubApp::HubApp(
     wifi_manager::IWiFiManager& wifi,
     IOtaManager& ota_manager,
     time_manager::ITimeManager& time_manager,
+    IDisplayManager& display_mgr,
+    UiInputManager& ui_input_mgr,
+    hub::LoadControlTask& load_control_task,
+    EnergyMonitor& energy_monitor,
+    hub::MessageDispatcher& msg_dispatcher,
     idf_hals::IHalFreertos& rtos,
     idf_hals::ISystemHAL& hal_system,
     idf_hals::ISleepHAL& hal_sleep,
@@ -46,6 +47,11 @@ HubApp::HubApp(
     , wifi_(wifi)
     , ota_manager_(ota_manager)
     , time_manager_(time_manager)
+    , display_mgr_(display_mgr)
+    , ui_input_mgr_(ui_input_mgr)
+    , load_control_task_(load_control_task)
+    , energy_monitor_(energy_monitor)
+    , msg_dispatcher_(msg_dispatcher)
     , hal_rtos_(rtos)
     , hal_system_(hal_system)
     , hal_sleep_(hal_sleep)
@@ -81,6 +87,37 @@ esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t app_cmd_queue, 
 
     log_boot_summary();
 
+    // Initialize UI Input Subsystem
+    if ((err = ui_input_mgr_.init()) != ESP_OK || (err = ui_input_mgr_.start()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize/start UiInputManager: %s", esp_err_to_name(err));
+        session_healthy_ = false;
+    }
+
+    // Initialize Display Subsystem
+    if ((err = display_mgr_.init()) != ESP_OK || (err = display_mgr_.start()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize/start DisplayManager: %s", esp_err_to_name(err));
+        session_healthy_ = false;
+    }
+
+    // Initialize Energy Arbitration Subsystem (LCT & EnergyMonitor)
+    if ((err = load_control_task_.init()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize LoadControlTask: %s", esp_err_to_name(err));
+        session_healthy_ = false;
+    }
+    else {
+        EnergyMonitorConfig energy_cfg = config_.energy_monitor_config;
+        energy_cfg.signal_semaphore = load_control_task_.get_energy_semaphore();
+        if ((err = energy_monitor_.init(energy_cfg)) != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to initialize EnergyMonitor: %s", esp_err_to_name(err));
+            session_healthy_ = false;
+        }
+
+        if ((err = load_control_task_.start()) != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to start LoadControlTask: %s", esp_err_to_name(err));
+            session_healthy_ = false;
+        }
+    }
+
     if ((err = init_wifi()) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize WiFi: %s", esp_err_to_name(err));
         session_healthy_ = false;
@@ -91,6 +128,12 @@ esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t app_cmd_queue, 
         ESP_LOGE(TAG, "Failed to initialize ESP-NOW: %s", esp_err_to_name(err));
         session_healthy_ = false;
         return err;
+    }
+
+    // Start Message Dispatcher background task
+    if ((err = msg_dispatcher_.start()) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start MessageDispatcher: %s", esp_err_to_name(err));
+        session_healthy_ = false;
     }
 
     time_manager::TimeManagerConfig time_cfg;
@@ -119,7 +162,7 @@ esp_err_t HubApp::init(const HubAppConfig& config, QueueHandle_t app_cmd_queue, 
         ESP_LOGE(TAG, "Failed to init time manager: %s", esp_err_to_name(err));
     }
 
-    // 9. Roolback if session is not healthy
+    // Rollback if session is not healthy
     if (!session_healthy_) {
         if (pending_firmware_verify_) {
             ESP_LOGE(TAG, "Session is not healthy during OTA verification.");

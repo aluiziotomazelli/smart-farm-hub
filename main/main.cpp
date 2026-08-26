@@ -36,7 +36,6 @@
 #include "ota_manager.hpp"
 #include "persistence_backend.hpp"
 #include "sun_schedule.hpp"
-#include "system_state.hpp"
 #include "tank_controller.hpp"
 #include "time_manager.hpp"
 #include "ui_events.hpp"
@@ -116,11 +115,6 @@ extern "C" void app_main()
 {
     ESP_LOGI(TAG, "Smart Farm Hub starting...");
 
-    g_state_mutex = hal_freertos.mutex_create();
-    if (g_state_mutex == nullptr) {
-        ESP_LOGE(TAG, "Failed to create g_state_mutex");
-    }
-
     QueueHandle_t ui_event_queue = hal_freertos.queue_create(20, sizeof(UiEvent));
     QueueHandle_t app_cmd_queue = hal_freertos.queue_create(20, sizeof(AppCommand));
     QueueHandle_t rx_queue = hal_freertos.queue_create(30, sizeof(espnow::AppMessage));
@@ -129,16 +123,10 @@ extern "C" void app_main()
         ESP_LOGE(TAG, "Failed to create UI / App / RX queues");
     }
 
-    static UiInputManager ui_input_mgr(g_encoder, g_encoder_push, g_boot_button, ui_event_queue, hal_freertos);
-    if (ui_input_mgr.init() == ESP_OK) {
-        ui_input_mgr.start();
-    }
-    else {
-        ESP_LOGE(TAG, "Failed to initialize UiInputManager");
-    }
-
     auto& wifi = wifi_manager::WiFiManager::get_instance();
     auto& espnow = espnow::EspNowManager::instance();
+
+    static UiInputManager ui_input_mgr(g_encoder, g_encoder_push, g_boot_button, ui_event_queue, hal_freertos);
 
     static UiSnapshot ui_snapshot;
     static hub::NodeRegistry node_registry;
@@ -150,12 +138,22 @@ extern "C" void app_main()
     };
     static DisplayManager display_mgr(
         ui_snapshot, node_registry, ui_event_queue, app_cmd_queue, &espnow, hal_freertos, hal_i2c, display_cfg);
-    if (display_mgr.init() == ESP_OK) {
-        display_mgr.start();
-    }
-    else {
-        ESP_LOGE(TAG, "Failed to initialize DisplayManager");
-    }
+
+    static SunSchedule sun_schedule(-23.5505f, -3.0f); // Default SP coordinates (lat, tz_offset)
+    static TankController tank_controller(app_time_manager, sun_schedule);
+    static EnergyMonitor energy_monitor(hal_gpio, hal_freertos);
+
+    static hub::LoadControlTask load_control_task(
+        hal_freertos, app_time_manager, ui_snapshot, command_mgr, energy_monitor);
+
+    // Create and register payload handlers with the MessageDispatcher
+    static hub::MessageDispatcher msg_dispatcher(rx_queue, espnow, hal_freertos);
+    static hub::WaterTankHandler water_tank_handler(
+        ui_snapshot, node_registry, tank_controller, load_control_task, command_mgr, hal_timer);
+    static hub::SolarSensorHandler solar_sensor_handler(
+        ui_snapshot, node_registry, load_control_task, command_mgr, hal_timer);
+    static hub::LoadControlHandler load_control_handler(
+        node_registry, load_control_task, command_mgr, hal_timer);
 
     HubApp app(
         nvs_core,
@@ -167,37 +165,16 @@ extern "C" void app_main()
         wifi,
         ota_manager,
         app_time_manager,
+        display_mgr,
+        ui_input_mgr,
+        load_control_task,
+        energy_monitor,
+        msg_dispatcher,
         hal_freertos,
         hal_system,
         hal_sleep,
         hal_timer);
 
-    HubAppConfig config;
-
-    if (app.init(config, app_cmd_queue, rx_queue) != ESP_OK) {
-        ESP_LOGE(TAG, "Critical hardware/application initialization failure. Rebooting in 10s...");
-        hal_freertos.task_delay(pdMS_TO_TICKS(10000));
-        esp_restart();
-        return;
-    }
-
-    static SunSchedule sun_schedule(-23.5505f, -3.0f); // Default SP coordinates (lat, tz_offset)
-    static TankController tank_controller(app_time_manager, sun_schedule);
-    static EnergyMonitor energy_monitor(hal_gpio, hal_freertos);
-
-    static hub::LoadControlTask load_control_task(
-        hal_freertos, app_time_manager, ui_snapshot, command_mgr, energy_monitor);
-    load_control_task.init();
-    load_control_task.start();
-
-    // Create and register payload handlers with the MessageDispatcher
-    static hub::MessageDispatcher msg_dispatcher(rx_queue, espnow, hal_freertos);
-    static hub::WaterTankHandler water_tank_handler(
-        ui_snapshot, node_registry, tank_controller, load_control_task, command_mgr, hal_timer);
-    static hub::SolarSensorHandler solar_sensor_handler(
-        ui_snapshot, node_registry, load_control_task, command_mgr, hal_timer);
-    static hub::LoadControlHandler load_control_handler(
-        node_registry, load_control_task, command_mgr, hal_timer);
     static hub::OtaStatusHandler ota_status_handler(
         [&app](uint8_t node_id, uint8_t major, uint8_t minor, uint8_t patch) {
             app.on_node_version_received(node_id, major, minor, patch);
@@ -208,8 +185,13 @@ extern "C" void app_main()
     msg_dispatcher.register_handler(farm::PayloadType::LOAD_CONTROL_STATUS, &load_control_handler);
     msg_dispatcher.register_handler(farm::PayloadType::OTA_STATUS_REPORT, &ota_status_handler);
 
-    if (msg_dispatcher.start() != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start MessageDispatcher");
+    HubAppConfig config;
+
+    if (app.init(config, app_cmd_queue, rx_queue) != ESP_OK) {
+        ESP_LOGE(TAG, "Critical hardware/application initialization failure. Rebooting in 10s...");
+        hal_freertos.task_delay(pdMS_TO_TICKS(10000));
+        esp_restart();
+        return;
     }
 
     app.run();

@@ -24,7 +24,7 @@ Historically, `SystemState` acted as a global god-object struct containing:
 ### 2.2 Phase-out Roadmap
 1. **Phase 1-3 (Completed):** Domain controllers (`TankController`, `EnergyMonitor`) and core arbitration engine (`LoadControlEngine`) operate on pure private domain interfaces and tables with zero global state dependencies.
 2. **Phase 4 (Completed):** Introduction of `NodeRegistry`, `UiSnapshot`, and `LoadControlTask` (LCT), decoupling node lifecycle management, load arbitration execution, and real-time UI rendering from `SystemState`.
-3. **Phase 5 (Current):** Refactoring `MessageDispatcher` handlers (`WaterTankHandler`, `SolarSensorHandler`, `LoadControlHandler`), `CommandManager`, and `UIController` to eliminate all remaining references to `SystemState`, followed by the complete deletion of `system_state.hpp` and `g_state_mutex`.
+3. **Phase 5 (Completed):** Refactoring of `MessageDispatcher` handlers (`WaterTankHandler`, `SolarSensorHandler`, `LoadControlHandler`), `CommandManager`, `UIController`, `DisplayManager`, and `HubApp` to eliminate all references to `SystemState`, followed by the complete deletion of `system_state.hpp` and `g_state_mutex`.
 
 ---
 

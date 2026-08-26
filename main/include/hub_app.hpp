@@ -18,13 +18,19 @@
 #include "app_commands.hpp"
 #include "command_manager.hpp"
 #include "core_types.hpp"
+#include "display_manager.hpp"
+#include "energy_monitor.hpp"
 #include "farm_protocol_types.hpp"
 #include "hub_stats.hpp"
+#include "load_control_task.hpp"
+#include "message_dispatcher.hpp"
 #include "ui_events.hpp"
+#include "ui_input_manager.hpp"
 #include "ui_snapshot.hpp"
 
 struct HubAppConfig
 {
+    EnergyMonitorConfig energy_monitor_config{};
     // Placeholder for future configuration options
 };
 
@@ -41,6 +47,11 @@ public:
         wifi_manager::IWiFiManager& wifi,
         IOtaManager& ota_manager,
         time_manager::ITimeManager& time_manager,
+        IDisplayManager& display_mgr,
+        UiInputManager& ui_input_mgr,
+        hub::LoadControlTask& load_control_task,
+        EnergyMonitor& energy_monitor,
+        hub::MessageDispatcher& msg_dispatcher,
         idf_hals::IHalFreertos& rtos,
         idf_hals::ISystemHAL& hal_system,
         idf_hals::ISleepHAL& hal_sleep,
@@ -73,6 +84,11 @@ private:
     wifi_manager::IWiFiManager& wifi_;
     IOtaManager& ota_manager_;
     time_manager::ITimeManager& time_manager_;
+    IDisplayManager& display_mgr_;
+    UiInputManager& ui_input_mgr_;
+    hub::LoadControlTask& load_control_task_;
+    EnergyMonitor& energy_monitor_;
+    hub::MessageDispatcher& msg_dispatcher_;
     idf_hals::IHalFreertos& hal_rtos_;
     idf_hals::ISystemHAL& hal_system_;
     idf_hals::ISleepHAL& hal_sleep_;
