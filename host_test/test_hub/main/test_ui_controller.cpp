@@ -188,3 +188,26 @@ TEST_F(UIControllerTest, PumpLastReportScreen_Render_DrawsAllRows)
 
     sut.render_pump_last_report_screen(data);
 }
+
+TEST_F(UIControllerTest, NodeDetailsScreen_UsesGetPeerAndRendersMac)
+{
+    UIController sut(mock_gfx_, nullptr, nullptr, &mock_espnow_);
+    UiSnapshotData data;
+    sut.set_active_node(farm::NodeId::PUMP_CONTROL);
+
+    espnow::PeerInfo peer{};
+    peer.node_id = static_cast<espnow::NodeId>(farm::NodeId::PUMP_CONTROL);
+    uint8_t mac[6] = {0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC};
+    memcpy(peer.mac, mac, 6);
+
+    EXPECT_CALL(mock_espnow_, get_peer(static_cast<espnow::NodeId>(farm::NodeId::PUMP_CONTROL), _))
+        .WillOnce(::testing::DoAll(::testing::SetArgReferee<1>(peer), Return(true)));
+
+    EXPECT_CALL(mock_gfx_, get_width()).WillRepeatedly(Return(128));
+    EXPECT_CALL(mock_gfx_, get_string_width(_, _)).WillRepeatedly(Return(24));
+    EXPECT_CALL(mock_gfx_, draw_string_centered(0, _, 1, 0, -1, nullptr, false)).Times(::testing::AtLeast(1));
+    EXPECT_CALL(mock_gfx_, draw_hline(0, 8, 128, 1)).Times(::testing::AtLeast(1));
+    EXPECT_CALL(mock_gfx_, draw_string(_, _, _, 1, nullptr, _)).Times(::testing::AtLeast(3));
+
+    sut.render_node_info_screen(data);
+}

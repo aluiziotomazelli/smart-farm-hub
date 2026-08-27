@@ -729,17 +729,13 @@ void UIController::render_node_info_screen(const UiSnapshotData& data)
     }
 
     // --- Lookup PeerInfo from EspNow ---
-    // TODO: Implement get_peer(NodeId, PeerInfo&) in IEspNowManager to avoid copying full peers vector
     uint8_t peer_mac[6] = {};
     bool peer_found = false;
     if (espnow_ != nullptr) {
-        auto peers = espnow_->get_peers();
-        for (const auto& p : peers) {
-            if (p.node_id == static_cast<espnow::NodeId>(active_node_)) {
-                memcpy(peer_mac, p.mac, 6);
-                peer_found = true;
-                break;
-            }
+        espnow::PeerInfo peer_info{};
+        if (espnow_->get_peer(active_node_, peer_info)) {
+            memcpy(peer_mac, peer_info.mac, 6);
+            peer_found = true;
         }
     }
 
