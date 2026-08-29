@@ -257,7 +257,7 @@ void LoadControlTask::evaluate_and_dispatch(int64_t now_ms)
 
 void LoadControlTask::refresh_ui_snapshot()
 {
-    std::array<LoadState, static_cast<size_t>(LoadIndex::MAX)> loads{};
+    std::array<LoadUiSnapshot, static_cast<size_t>(LoadIndex::MAX)> loads{};
     std::array<EpisodicWindowState, static_cast<size_t>(LoadIndex::MAX)> window_states{};
 
     for (size_t i = 0; i < static_cast<size_t>(LoadIndex::MAX); ++i) {
@@ -265,6 +265,7 @@ void LoadControlTask::refresh_ui_snapshot()
         loads[i].node_id = entry.last_status.node_id;
         loads[i].circuit_id = entry.last_status.circuit_id;
         loads[i].control_mode = entry.last_status.control_mode;
+        loads[i].selected_source = entry.last_status.selected_source;
         if (entry.assigned_source != farm::PowerSource::UNKNOWN) {
             loads[i].active_source = entry.assigned_source;
         } else {

@@ -58,7 +58,8 @@ TEST_F(LoadControlHandlerTest, ValidPumpControlPayload_UpdatesNodeRegistryAndPos
     report.circuit_id = 0;
     report.power_profile = farm::PowerProfile::ALWAYS_ON;
     report.control_mode = farm::ControlMode::AUTO;
-    report.active_power_source = farm::PowerSource::SOLAR;
+    report.selected_source = farm::PowerSource::AUTO;
+    report.active_source = farm::PowerSource::SOLAR;
     report.load_state = farm::LoadState::RUNNING;
     report.power_w = 1500;
     report.runtime_s = 120;
@@ -83,6 +84,7 @@ TEST_F(LoadControlHandlerTest, ValidPumpControlPayload_UpdatesNodeRegistryAndPos
         ::testing::Field(&LoadStatusUpdate::power_w, 1500),
         ::testing::Field(&LoadStatusUpdate::runtime_s, 120),
         ::testing::Field(&LoadStatusUpdate::load_state, farm::LoadState::RUNNING),
+        ::testing::Field(&LoadStatusUpdate::selected_source, farm::PowerSource::AUTO),
         ::testing::Field(&LoadStatusUpdate::active_source, farm::PowerSource::SOLAR)
     ))).WillOnce(Return(ESP_OK));
 

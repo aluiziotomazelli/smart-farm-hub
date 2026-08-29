@@ -7,7 +7,7 @@
 
 #include "interfaces/i_load_domain_controller.hpp"
 #include "interfaces/i_time_manager.hpp"
-#include "load_types.hpp"
+#include "load_control_types.hpp"
 #include "sun_schedule.hpp"
 
 /**

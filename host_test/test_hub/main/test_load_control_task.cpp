@@ -85,6 +85,7 @@ TEST_F(LoadControlTaskTest, PostEventsAfterInitSucceeds)
         .node_id = farm::NodeId::PUMP_CONTROL,
         .circuit_id = 0,
         .control_mode = farm::ControlMode::AUTO,
+        .selected_source = farm::PowerSource::AUTO,
         .active_source = farm::PowerSource::SOLAR,
         .load_state = farm::LoadState::RUNNING,
         .power_w = 450,

@@ -6,7 +6,6 @@
 
 #include "interfaces/i_energy_monitor.hpp"
 #include "load_control_types.hpp"
-#include "load_types.hpp"
 
 /**
  * @enum class WindowFillState

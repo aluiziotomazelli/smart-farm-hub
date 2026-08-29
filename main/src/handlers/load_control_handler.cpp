@@ -69,7 +69,8 @@ void LoadControlHandler::post_handle_payload(const espnow::AppMessage& msg)
             .node_id = sender_node,
             .circuit_id = report.circuit_id,
             .control_mode = report.control_mode,
-            .active_source = report.active_power_source,
+            .selected_source = report.selected_source,
+            .active_source = report.active_source,
             .load_state = report.load_state,
             .power_w = report.power_w,
             .runtime_s = report.runtime_s,
@@ -82,7 +83,7 @@ void LoadControlHandler::post_handle_payload(const espnow::AppMessage& msg)
         // 4. If status belongs to PUMP, notify TankController to track actual pump state
         if (load_idx == LoadIndex::PUMP) {
             tank_controller_.on_pump_status_update(
-                report.load_state, report.active_power_source, report.runtime_s);
+                report.load_state, report.active_source, report.runtime_s);
         }
     } else {
         ESP_LOGW(TAG, "Received load status from unmapped node 0x%02X circuit %u", msg.sender_id, report.circuit_id);
@@ -90,12 +91,13 @@ void LoadControlHandler::post_handle_payload(const espnow::AppMessage& msg)
 
     ESP_LOGI(
         TAG,
-        "[LOAD CONTROL] Node: 0x%02X | Circuit: %u | State: %u | Mode: %u | Source: %u | Power: %u W | Runtime: %lu s | Uptime: %lu s | RSSI: %d dBm",
+        "[LOAD CONTROL] Node: 0x%02X | Circuit: %u | State: %u | Mode: %u | SelSrc: %u | ActSrc: %u | Power: %u W | Runtime: %lu s | Uptime: %lu s | RSSI: %d dBm",
         msg.sender_id,
         report.circuit_id,
         static_cast<uint8_t>(report.load_state),
         static_cast<uint8_t>(report.control_mode),
-        static_cast<uint8_t>(report.active_power_source),
+        static_cast<uint8_t>(report.selected_source),
+        static_cast<uint8_t>(report.active_source),
         report.power_w,
         static_cast<unsigned long>(report.runtime_s),
         static_cast<unsigned long>(report.uptime_s),

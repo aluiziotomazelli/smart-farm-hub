@@ -131,6 +131,7 @@ TEST_F(UIControllerTest, PumpScreen_Render_DrawsHeaderStatusAndIndicators)
     pump.node_id = farm::NodeId::PUMP_CONTROL;
     pump.load_state = farm::LoadState::RUNNING;
     pump.control_mode = farm::ControlMode::AUTO;
+    pump.selected_source = farm::PowerSource::AUTO;
     pump.active_source = farm::PowerSource::SOLAR;
     pump.power_w = 1500;
     pump.runtime_s = 3665; // 1h 1m 5s
@@ -172,6 +173,7 @@ TEST_F(UIControllerTest, PumpLastReportScreen_Render_DrawsAllRows)
     pump.node_id = farm::NodeId::PUMP_CONTROL;
     pump.load_state = farm::LoadState::RUNNING;
     pump.control_mode = farm::ControlMode::AUTO;
+    pump.selected_source = farm::PowerSource::AUTO;
     pump.active_source = farm::PowerSource::SOLAR;
     pump.power_w = 1500;
     pump.runtime_s = 4530; // 1h 15m 30s

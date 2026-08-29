@@ -165,15 +165,16 @@ TEST_F(LoadControlEngineTest, ScenarioC_CapturesCompressorOffCycleForEpisodicLoa
     EXPECT_EQ(engine_.get_load(LoadIndex::PUMP).assigned_source, farm::PowerSource::SOLAR);
 }
 
-TEST_F(LoadControlEngineTest, IdleLoadWithSelectedSourceDoesNotTriggerAction)
+TEST_F(LoadControlEngineTest, LockedSourceGridIdleDoesNotTriggerActionWhenIntentOff)
 {
-    // Pump reports IDLE state with source locked to GRID (physical switch set, but not running)
+    // Pump reports IDLE state with source locked to GRID (physical switch set to GRID, but not running)
     engine_.on_load_status({
         .load_index = LoadIndex::PUMP,
         .node_id = farm::NodeId::PUMP_CONTROL,
         .circuit_id = 0,
-        .control_mode = farm::ControlMode::SOURCE_LOCKED,
-        .active_source = farm::PowerSource::GRID,
+        .control_mode = farm::ControlMode::AUTO,
+        .selected_source = farm::PowerSource::GRID,
+        .active_source = farm::PowerSource::UNKNOWN,
         .load_state = farm::LoadState::IDLE,
         .power_w = 0,
         .timestamp_ms = 1000
@@ -202,6 +203,7 @@ TEST_F(LoadControlEngineTest, FullManualModeNeverGeneratesAction)
         .node_id = farm::NodeId::PUMP_CONTROL,
         .circuit_id = 0,
         .control_mode = farm::ControlMode::FULL_MANUAL,
+        .selected_source = farm::PowerSource::GRID,
         .active_source = farm::PowerSource::GRID,
         .load_state = farm::LoadState::RUNNING,
         .power_w = 600,
@@ -223,14 +225,15 @@ TEST_F(LoadControlEngineTest, FullManualModeNeverGeneratesAction)
     }
 }
 
-TEST_F(LoadControlEngineTest, StopOverrideModeRunningDoesNotTriggerLoadOffWhenIntentIsOff)
+TEST_F(LoadControlEngineTest, ManualRunModeRunningDoesNotTriggerLoadOffWhenIntentIsOff)
 {
-    // Operator pressed manual START on pump controller (STOP_OVERRIDE mode, running on GRID)
+    // Operator pressed manual START on pump controller (MANUAL_RUN mode, running on GRID)
     engine_.on_load_status({
         .load_index = LoadIndex::PUMP,
         .node_id = farm::NodeId::PUMP_CONTROL,
         .circuit_id = 0,
-        .control_mode = farm::ControlMode::STOP_OVERRIDE,
+        .control_mode = farm::ControlMode::MANUAL_RUN,
+        .selected_source = farm::PowerSource::GRID,
         .active_source = farm::PowerSource::GRID,
         .load_state = farm::LoadState::RUNNING,
         .power_w = 320,

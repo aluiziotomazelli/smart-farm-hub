@@ -8,7 +8,6 @@
 
 #include "farm_protocol_types.hpp"
 #include "load_control_types.hpp"
-#include "load_types.hpp"
 
 /**
  * @struct UiSnapshotData
@@ -50,7 +49,7 @@ struct UiSnapshotData {
     int32_t solar_headroom_w{0};           ///< Remaining solar headroom in Watts
 
     // ─── Controlled Electrical Loads ──────────────────────────────────
-    std::array<LoadState, static_cast<size_t>(LoadIndex::MAX)> loads{};
+    std::array<LoadUiSnapshot, static_cast<size_t>(LoadIndex::MAX)> loads{};
     std::array<EpisodicWindowState, static_cast<size_t>(LoadIndex::MAX)> load_window_states{};
 
     // ─── System / Hub Status ──────────────────────────────────────────
@@ -60,12 +59,12 @@ struct UiSnapshotData {
     int64_t last_ui_activity_ts{0};
 
     // ─── Helper Queries ───────────────────────────────────────────────
-    const LoadState& load(LoadIndex idx) const
+    const LoadUiSnapshot& load(LoadIndex idx) const
     {
         return loads[static_cast<size_t>(idx)];
     }
 
-    LoadState& load(LoadIndex idx)
+    LoadUiSnapshot& load(LoadIndex idx)
     {
         return loads[static_cast<size_t>(idx)];
     }
@@ -198,7 +197,7 @@ public:
         int32_t solar_headroom_w,
         bool solar_available,
         bool grid_available,
-        const std::array<LoadState, static_cast<size_t>(LoadIndex::MAX)>& loads,
+        const std::array<LoadUiSnapshot, static_cast<size_t>(LoadIndex::MAX)>& loads,
         const std::array<EpisodicWindowState, static_cast<size_t>(LoadIndex::MAX)>& window_states)
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -214,7 +213,7 @@ public:
     /**
      * @brief Updates single load status in the snapshot.
      */
-    void update_load(LoadIndex index, const LoadState& state, EpisodicWindowState window_state = EpisodicWindowState::IDLE)
+    void update_load(LoadIndex index, const LoadUiSnapshot& state, EpisodicWindowState window_state = EpisodicWindowState::IDLE)
     {
         std::lock_guard<std::mutex> lock(mutex_);
         size_t idx = static_cast<size_t>(index);

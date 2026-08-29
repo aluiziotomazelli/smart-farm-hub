@@ -243,9 +243,9 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
 
     for (auto& cand : active_candidates) {
         auto& load = loads_[cand.index];
-        bool is_source_locked = (load.last_status.control_mode == farm::ControlMode::SOURCE_LOCKED ||
-                                 load.last_status.control_mode == farm::ControlMode::STOP_OVERRIDE);
-        farm::PowerSource locked_src = load.last_status.active_source;
+        bool is_source_locked = (load.last_status.selected_source == farm::PowerSource::SOLAR ||
+                                 load.last_status.selected_source == farm::PowerSource::GRID);
+        farm::PowerSource locked_src = load.last_status.selected_source;
 
         bool can_use_solar = solar_available_ && (remaining_solar_w >= cand.watts);
 
@@ -258,7 +258,7 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
         }
 
         if (is_source_locked && locked_src != farm::PowerSource::UNKNOWN) {
-            // Actuator source is physically locked by operator
+            // Actuator source is physically locked by operator switch
             if (locked_src == farm::PowerSource::SOLAR) {
                 if (can_use_solar) {
                     load.assigned_on = true;
@@ -305,8 +305,8 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
     // can fit in the leftover solar watts without displacing larger loads (only for unlocked loads).
     for (auto& cand : active_candidates) {
         auto& load = loads_[cand.index];
-        bool is_source_locked = (load.last_status.control_mode == farm::ControlMode::SOURCE_LOCKED ||
-                                 load.last_status.control_mode == farm::ControlMode::STOP_OVERRIDE);
+        bool is_source_locked = (load.last_status.selected_source == farm::PowerSource::SOLAR ||
+                                 load.last_status.selected_source == farm::PowerSource::GRID);
         if (!is_source_locked &&
             load.assigned_on &&
             load.assigned_source == farm::PowerSource::GRID &&
@@ -333,10 +333,10 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
             state_differs = !current_on || (current_src != load.assigned_source);
         } else {
             // Desired state is OFF:
-            // If in STOP_OVERRIDE, operator started the load locally.
+            // If in MANUAL_RUN, operator started the load locally.
             // Hub only sends LOAD_OFF if desired_state was explicitly evaluated as OFF
             // (e.g. TankController decided target level reached / emergency).
-            if (load.last_status.control_mode == farm::ControlMode::STOP_OVERRIDE) {
+            if (load.last_status.control_mode == farm::ControlMode::MANUAL_RUN) {
                 // If TankController has not requested fill and tank is satisfied (or emergency),
                 // but pump was started by operator, we let operator run UNLESS tank is full (checked in TC).
                 // When TC is satisfied (IDLE), desired_state is OFF. But if TC is in FILL_REQUESTED/FILLING, desired_state is ON.

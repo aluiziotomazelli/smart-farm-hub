@@ -77,7 +77,7 @@ TEST(UiSnapshotTest, UpdateEnergyAndLoads)
 {
     UiSnapshot snapshot;
 
-    std::array<LoadState, static_cast<size_t>(LoadIndex::MAX)> loads{};
+    std::array<LoadUiSnapshot, static_cast<size_t>(LoadIndex::MAX)> loads{};
     std::array<EpisodicWindowState, static_cast<size_t>(LoadIndex::MAX)> window_states{};
 
     loads[static_cast<size_t>(LoadIndex::PUMP)].node_id = farm::NodeId::PUMP_CONTROL;
