@@ -8,6 +8,7 @@
 #include "interfaces/i_node_registry.hpp"
 #include "interfaces/i_payload_handler.hpp"
 #include "load_control_types.hpp"
+#include "tank_controller.hpp"
 
 namespace hub {
 
@@ -16,13 +17,14 @@ namespace hub {
  * @brief Handles incoming LOAD_CONTROL_STATUS telemetry messages from actuator nodes.
  *
  * Ingests actuator status reports, updates NodeRegistry, and forwards LoadStatusUpdate
- * directly to LoadControlTask.
+ * directly to LoadControlTask and TankController.
  */
 class LoadControlHandler : public IPayloadHandler
 {
 public:
     LoadControlHandler(
         INodeRegistry& node_registry,
+        TankController& tank_controller,
         ILoadControlTask& load_control_task,
         ICommandManager& command_mgr,
         idf_hals::ITimerHAL& timer);
@@ -37,6 +39,7 @@ public:
 
 private:
     INodeRegistry& node_registry_;
+    TankController& tank_controller_;
     ILoadControlTask& load_control_task_;
     ICommandManager& command_mgr_;
     idf_hals::ITimerHAL& timer_;

@@ -153,7 +153,7 @@ extern "C" void app_main()
     static hub::SolarSensorHandler solar_sensor_handler(
         ui_snapshot, node_registry, load_control_task, command_mgr, hal_timer);
     static hub::LoadControlHandler load_control_handler(
-        node_registry, load_control_task, command_mgr, hal_timer);
+        node_registry, tank_controller, load_control_task, command_mgr, hal_timer);
 
     HubApp app(
         nvs_core,
