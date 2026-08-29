@@ -6,9 +6,7 @@
 
 static const char* TAG = "EnergyMonitor";
 
-EnergyMonitor::EnergyMonitor(
-    idf_hals::IGpioHAL& hal_gpio,
-    idf_hals::IHalFreertos& hal_freertos)
+EnergyMonitor::EnergyMonitor(idf_hals::IGpioHAL& hal_gpio, idf_hals::IHalFreertos& hal_freertos)
     : hal_gpio_(hal_gpio)
     , hal_freertos_(hal_freertos)
 {
@@ -37,7 +35,7 @@ void IRAM_ATTR EnergyMonitor::gpio_isr_handler(void* arg)
     BaseType_t higher_priority_task_woken = pdFALSE;
 
     if (self->signal_semaphore_ != nullptr) {
-        self->hal_freertos_.semaphore_give_from_isr(self->signal_semaphore_, &higher_priority_task_woken);
+        xSemaphoreGiveFromISR(self->signal_semaphore_, &higher_priority_task_woken);
     }
 
     portYIELD_FROM_ISR(higher_priority_task_woken);
