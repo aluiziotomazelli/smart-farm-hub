@@ -14,10 +14,12 @@ namespace hub {
 
 LoadControlHandler::LoadControlHandler(
     INodeRegistry& node_registry,
+    TankController& tank_controller,
     ILoadControlTask& load_control_task,
     ICommandManager& command_mgr,
     idf_hals::ITimerHAL& timer)
     : node_registry_(node_registry)
+    , tank_controller_(tank_controller)
     , load_control_task_(load_control_task)
     , command_mgr_(command_mgr)
     , timer_(timer)
@@ -35,37 +37,56 @@ espnow::AckStatus LoadControlHandler::handle_payload(const espnow::AppMessage& m
     memcpy(&report, msg.payload, sizeof(farm::LoadControlStatus));
 
     auto sender_node = static_cast<farm::NodeId>(msg.sender_id);
-    const int64_t now_ms = static_cast<int64_t>(timer_.get_time_us() / 1000);
 
     // 1. Update NodeRegistry power profile
     node_registry_.set_power_profile(sender_node, report.power_profile);
 
-    // 2. Map node & circuit to logical LoadIndex
+    return espnow::AckStatus::OK;
+}
+
+void LoadControlHandler::post_handle_payload(const espnow::AppMessage& msg)
+{
+    if (msg.payload_len < sizeof(farm::LoadControlStatus)) {
+        return;
+    }
+
+    farm::LoadControlStatus report{};
+    memcpy(&report, msg.payload, sizeof(farm::LoadControlStatus));
+
+    auto sender_node = static_cast<farm::NodeId>(msg.sender_id);
+    const int64_t now_ms = static_cast<int64_t>(timer_.get_time_us() / 1000);
+
+    // 1. Map node & circuit to logical LoadIndex
     LoadIndex load_idx = LoadIndex::UNKNOWN;
     if (sender_node == farm::NodeId::PUMP_CONTROL && report.circuit_id == 0) {
         load_idx = LoadIndex::PUMP;
     }
 
-    if (load_idx == LoadIndex::UNKNOWN) {
+    if (load_idx != LoadIndex::UNKNOWN) {
+        // 2. Populate LoadStatusUpdate
+        LoadStatusUpdate status_update{
+            .load_index = load_idx,
+            .node_id = sender_node,
+            .circuit_id = report.circuit_id,
+            .control_mode = report.control_mode,
+            .active_source = report.active_power_source,
+            .load_state = report.load_state,
+            .power_w = report.power_w,
+            .runtime_s = report.runtime_s,
+            .timestamp_ms = now_ms,
+        };
+
+        // 3. Forward status report to LoadControlTask
+        load_control_task_.post_load_status(status_update);
+
+        // 4. If status belongs to PUMP, notify TankController to track actual pump state
+        if (load_idx == LoadIndex::PUMP) {
+            tank_controller_.on_pump_status_update(
+                report.load_state, report.active_power_source, report.runtime_s);
+        }
+    } else {
         ESP_LOGW(TAG, "Received load status from unmapped node 0x%02X circuit %u", msg.sender_id, report.circuit_id);
-        return espnow::AckStatus::ERROR_INVALID_DATA;
     }
-
-    // 3. Populate LoadStatusUpdate
-    LoadStatusUpdate status_update{
-        .load_index = load_idx,
-        .node_id = sender_node,
-        .circuit_id = report.circuit_id,
-        .control_mode = report.control_mode,
-        .active_source = report.active_power_source,
-        .load_state = report.load_state,
-        .power_w = report.power_w,
-        .runtime_s = report.runtime_s,
-        .timestamp_ms = now_ms,
-    };
-
-    // 4. Forward status report to LoadControlTask
-    load_control_task_.post_load_status(status_update);
 
     ESP_LOGI(
         TAG,
@@ -80,19 +101,7 @@ espnow::AckStatus LoadControlHandler::handle_payload(const espnow::AppMessage& m
         static_cast<unsigned long>(report.uptime_s),
         msg.rssi);
 
-    return espnow::AckStatus::OK;
-}
-
-void LoadControlHandler::post_handle_payload(const espnow::AppMessage& msg)
-{
-    if (msg.payload_len < sizeof(farm::LoadControlStatus)) {
-        return;
-    }
-
-    const auto* report = reinterpret_cast<const farm::LoadControlStatus*>(msg.payload);
-    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
-
-    command_mgr_.process_node_wake(node_id, report->unix_time);
+    command_mgr_.process_node_wake(sender_node, report.unix_time);
 }
 
 } // namespace hub

@@ -75,10 +75,7 @@ TEST_F(WaterTankHandlerTest, HandleValidWaterReport_UpdatesAllSubsystemsAndEmits
     msg.rssi = -65;
     memcpy(msg.payload, &report, sizeof(farm::WaterLevelReport));
 
-    // Expect LoadControlTask to receive LoadIntent with desired_state = ON
-    EXPECT_CALL(mock_lct_, post_load_intent(::testing::Field(&LoadIntent::desired_state, LoadDesiredState::ON)))
-        .WillOnce(Return(ESP_OK));
-
+    // Verify handle_payload validates and updates NodeRegistry and UiSnapshot
     EXPECT_EQ(handler.handle_payload(msg), espnow::AckStatus::OK);
 
     // Verify NodeRegistry was updated
@@ -94,6 +91,12 @@ TEST_F(WaterTankHandlerTest, HandleValidWaterReport_UpdatesAllSubsystemsAndEmits
     EXPECT_EQ(snapshot.water_battery_percent, 85);
     EXPECT_FALSE(snapshot.water_float_switch_full);
     EXPECT_FALSE(snapshot.water_backup_mode);
+
+    // Expect LoadControlTask to receive LoadIntent with desired_state = ON during post_handle_payload (after ACK)
+    EXPECT_CALL(mock_lct_, post_load_intent(::testing::Field(&LoadIntent::desired_state, LoadDesiredState::ON)))
+        .WillOnce(Return(ESP_OK));
+
+    handler.post_handle_payload(msg);
 }
 
 TEST_F(WaterTankHandlerTest, PostHandlePayload_DispatchesNodeWakeToCommandManager)

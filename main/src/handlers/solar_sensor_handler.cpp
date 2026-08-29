@@ -77,7 +77,24 @@ espnow::AckStatus SolarSensorHandler::handle_payload(const espnow::AppMessage& m
         est.power_w_instant,
         daily_yield_wh_hub_);
 
-    // 5. Post reactive solar update to LoadControlTask
+    return espnow::AckStatus::OK;
+}
+
+void SolarSensorHandler::post_handle_payload(const espnow::AppMessage& msg)
+{
+    if (msg.payload_len < sizeof(farm::SolarSensorReport)) {
+        return;
+    }
+
+    farm::SolarSensorReport report{};
+    memcpy(&report, msg.payload, sizeof(farm::SolarSensorReport));
+
+    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
+    const int64_t now_ms = static_cast<int64_t>(timer_.get_time_us() / 1000);
+
+    const solar::SolarPowerEstimate est = solar::estimate(report, solar_cfg_);
+
+    // 1. Post reactive solar update to LoadControlTask
     SolarPowerUpdate solar_update{
         .power_w = est.power_w_instant,
         .irradiance_wm2 = report.irradiance_wm2,
@@ -100,20 +117,7 @@ espnow::AckStatus SolarSensorHandler::handle_payload(const espnow::AppMessage& m
         report.battery_mv,
         report.battery_percent);
 
-    return espnow::AckStatus::OK;
-}
-
-void SolarSensorHandler::post_handle_payload(const espnow::AppMessage& msg)
-{
-    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
-    uint64_t unix_time = 0;
-
-    if (msg.payload_len >= sizeof(farm::SolarSensorReport)) {
-        const auto* report = reinterpret_cast<const farm::SolarSensorReport*>(msg.payload);
-        unix_time = report->unix_time;
-    }
-
-    command_mgr_.process_node_wake(node_id, unix_time);
+    command_mgr_.process_node_wake(node_id, report.unix_time);
 }
 
 } // namespace hub

@@ -129,7 +129,8 @@ void CommandManager::dispatch_pending_commands(farm::NodeId node_id)
                     "Command 0x%02X successfully dispatched from RAM FIFO to node 0x%02X",
                     static_cast<uint8_t>(item.command),
                     static_cast<uint8_t>(node_id));
-            } else {
+            }
+            else {
                 ESP_LOGE(
                     TAG,
                     "Failed to dispatch RAM FIFO command 0x%02X to node 0x%02X: %s",
@@ -137,7 +138,8 @@ void CommandManager::dispatch_pending_commands(farm::NodeId node_id)
                     static_cast<uint8_t>(node_id),
                     esp_err_to_name(err));
             }
-        } else {
+        }
+        else {
             // Keep items for other nodes in the queue
             pending_queue_.push(item);
         }
@@ -156,20 +158,10 @@ esp_err_t CommandManager::broadcast_tank_level(
     update_pkt.backup_mode_active = backup_mode_active;
     update_pkt.float_switch_is_full = float_switch_is_full;
 
-    ESP_LOGI(
-        TAG,
-        "Broadcasting TANK_LEVEL_UPDATE: tank=%u, level=%u permille, backup=%d, full=%d to PUMP_CONTROL",
-        tank_id,
-        level_permille,
-        backup_mode_active,
-        float_switch_is_full);
+    ESP_LOGI(TAG, "Broadcasting TANK_LEVEL_UPDATE");
 
     return espnow_.send_data(
-        farm::NodeId::PUMP_CONTROL,
-        farm::PayloadType::TANK_LEVEL_UPDATE,
-        &update_pkt,
-        sizeof(update_pkt),
-        false);
+        farm::NodeId::PUMP_CONTROL, farm::PayloadType::TANK_LEVEL_UPDATE, &update_pkt, sizeof(update_pkt), false);
 }
 
 bool CommandManager::dispatch_decision(const LoadControlDecision& decision)
@@ -190,11 +182,7 @@ bool CommandManager::dispatch_decision(const LoadControlDecision& decision)
             static_cast<unsigned>(decision.watchdog_s));
 
         esp_err_t err = espnow_.send_command(
-            decision.node_id,
-            static_cast<espnow::CommandType>(farm::CommandType::LOAD_ON),
-            &cmd,
-            sizeof(cmd),
-            true);
+            decision.node_id, static_cast<espnow::CommandType>(farm::CommandType::LOAD_ON), &cmd, sizeof(cmd), true);
 
         if (err == ESP_OK) {
             commands_sent_++;
@@ -206,7 +194,8 @@ bool CommandManager::dispatch_decision(const LoadControlDecision& decision)
             static_cast<uint8_t>(decision.node_id),
             esp_err_to_name(err));
         return false;
-    } else {
+    }
+    else {
         farm::LoadOffCommand cmd{
             .circuit_id = decision.circuit_id,
         };
@@ -218,11 +207,7 @@ bool CommandManager::dispatch_decision(const LoadControlDecision& decision)
             decision.circuit_id);
 
         esp_err_t err = espnow_.send_command(
-            decision.node_id,
-            static_cast<espnow::CommandType>(farm::CommandType::LOAD_OFF),
-            &cmd,
-            sizeof(cmd),
-            true);
+            decision.node_id, static_cast<espnow::CommandType>(farm::CommandType::LOAD_OFF), &cmd, sizeof(cmd), true);
 
         if (err == ESP_OK) {
             commands_sent_++;
