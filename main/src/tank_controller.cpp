@@ -65,13 +65,17 @@ uint32_t TankController::calculate_estimated_duration_s() const
 void TankController::evaluate_policy()
 {
     // In backup mode, satisfaction is governed exclusively by the float switch.
-    // In normal mode, satisfaction is governed exclusively by ultrasonic permille.
+    // In normal mode, satisfaction is governed exclusively by sensor permille.
     bool is_full = backup_mode_ ? float_switch_full_ : (current_permille_ >= config_.target_fill_permille);
 
     if (is_full) {
         if (state_ != TankState::IDLE) {
-            ESP_LOGI(TAG, "Target level satisfied (mode=%s, permille=%u, float=%d). State -> IDLE",
-                     backup_mode_ ? "BACKUP" : "NORMAL", current_permille_, float_switch_full_);
+            ESP_LOGI(
+                TAG,
+                "Target level satisfied (mode=%s, permille=%u, float=%d). State -> IDLE",
+                backup_mode_ ? "BACKUP" : "NORMAL",
+                current_permille_,
+                float_switch_full_);
         }
         state_ = TankState::IDLE;
         manual_fill_requested_ = false;

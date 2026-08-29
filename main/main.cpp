@@ -181,6 +181,7 @@ extern "C" void app_main()
         });
 
     msg_dispatcher.register_handler(farm::PayloadType::WATER_LEVEL_REPORT, &water_tank_handler);
+    msg_dispatcher.register_handler(farm::PayloadType::FILL_REQUEST, &water_tank_handler);
     msg_dispatcher.register_handler(farm::PayloadType::SOLAR_SENSOR_REPORT, &solar_sensor_handler);
     msg_dispatcher.register_handler(farm::PayloadType::LOAD_CONTROL_STATUS, &load_control_handler);
     msg_dispatcher.register_handler(farm::PayloadType::OTA_STATUS_REPORT, &ota_status_handler);

@@ -30,6 +30,15 @@ WaterTankHandler::WaterTankHandler(
 
 espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg)
 {
+    if (msg.payload_type == static_cast<uint8_t>(farm::PayloadType::FILL_REQUEST)) {
+        if (msg.payload_len < sizeof(farm::FillRequest)) {
+            ESP_LOGE(TAG, "Invalid FILL_REQUEST payload length %zu received from node 0x%02X",
+                     msg.payload_len, msg.sender_id);
+            return espnow::AckStatus::ERROR_INVALID_DATA;
+        }
+        return espnow::AckStatus::OK;
+    }
+
     if (msg.payload_len < sizeof(farm::WaterLevelReport)) {
         ESP_LOGE(TAG, "Invalid payload length %zu received from node 0x%02X (expected >= %zu)",
                  msg.payload_len, msg.sender_id, sizeof(farm::WaterLevelReport));
@@ -62,6 +71,44 @@ espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg
 }
 
 void WaterTankHandler::post_handle_payload(const espnow::AppMessage& msg)
+{
+    if (msg.payload_type == static_cast<uint8_t>(farm::PayloadType::FILL_REQUEST)) {
+        post_handle_fill_request(msg);
+    }
+    else {
+        post_handle_water_report(msg);
+    }
+}
+
+void WaterTankHandler::post_handle_fill_request(const espnow::AppMessage& msg)
+{
+    if (msg.payload_len < sizeof(farm::FillRequest)) {
+        return;
+    }
+
+    farm::FillRequest req{};
+    memcpy(&req, msg.payload, sizeof(farm::FillRequest));
+
+    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
+
+    ESP_LOGI(
+        TAG,
+        "[FILL REQUEST] Manual fill requested by node 0x%02X (circuit=%u) | RSSI: %d dBm",
+        msg.sender_id,
+        req.circuit_id,
+        msg.rssi);
+
+    // 1. Trigger manual fill in TankController FSM
+    tank_controller_.on_manual_fill_request();
+
+    // 2. Post updated LoadIntent to LoadControlTask
+    LoadIntent intent = tank_controller_.get_current_intent();
+    load_control_task_.post_load_intent(intent);
+
+    command_mgr_.process_node_wake(node_id, 0);
+}
+
+void WaterTankHandler::post_handle_water_report(const espnow::AppMessage& msg)
 {
     if (msg.payload_len < sizeof(farm::WaterLevelReport)) {
         return;

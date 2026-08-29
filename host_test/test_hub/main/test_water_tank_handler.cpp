@@ -22,6 +22,7 @@ using ::testing::Return;
 
 class WaterTankHandlerTest : public ::testing::Test {
 protected:
+    static constexpr time_t NOON_EPOCH = 1700060400; // 2023-11-15 12:00:00 local
     UiSnapshot ui_snapshot_;
     NodeRegistry node_registry_;
     NiceMock<time_manager::MockTimeManager> mock_time_mgr_;
@@ -34,8 +35,6 @@ protected:
 
     void SetUp() override
     {
-        // 2023-11-15 12:00:00 local (BRT = UTC-3) => 15:00 UTC => 1700060400 s
-        constexpr time_t NOON_EPOCH = 1700060400;
         ON_CALL(mock_timer_, get_time_us()).WillByDefault(Return(1000000ULL)); // 1000ms
         ON_CALL(mock_time_mgr_, get_timestamp_ms()).WillByDefault(Return(static_cast<uint64_t>(NOON_EPOCH) * 1000ULL));
         ON_CALL(mock_time_mgr_, get_timestamp_sec()).WillByDefault(Return(NOON_EPOCH));
@@ -108,10 +107,54 @@ TEST_F(WaterTankHandlerTest, PostHandlePayload_DispatchesNodeWakeToCommandManage
 
     espnow::AppMessage msg{};
     msg.sender_id = static_cast<uint8_t>(farm::NodeId::WATER_TANK);
+    msg.payload_type = static_cast<uint8_t>(farm::PayloadType::WATER_LEVEL_REPORT);
     msg.payload_len = sizeof(farm::WaterLevelReport);
     memcpy(msg.payload, &report, sizeof(farm::WaterLevelReport));
 
     handler.post_handle_payload(msg);
 
+    EXPECT_EQ(command_mgr_.get_messages_received(), 1);
+}
+
+TEST_F(WaterTankHandlerTest, FillRequest_ShortPayload_ReturnsInvalidData)
+{
+    WaterTankHandler handler(ui_snapshot_, node_registry_, tank_controller_, mock_lct_, command_mgr_, mock_timer_);
+
+    espnow::AppMessage msg{};
+    msg.sender_id = static_cast<uint8_t>(farm::NodeId::PUMP_CONTROL);
+    msg.payload_type = static_cast<uint8_t>(farm::PayloadType::FILL_REQUEST);
+    msg.payload_len = sizeof(farm::FillRequest) - 1;
+
+    EXPECT_EQ(handler.handle_payload(msg), espnow::AckStatus::ERROR_INVALID_DATA);
+}
+
+TEST_F(WaterTankHandlerTest, FillRequest_ValidPayload_TriggersManualFillInTankControllerAndPostsIntent)
+{
+    WaterTankHandler handler(ui_snapshot_, node_registry_, tank_controller_, mock_lct_, command_mgr_, mock_timer_);
+
+    // Preset tank satisfied at 1000‰ (IDLE)
+    tank_controller_.on_tank_report(1000, false, false, NOON_EPOCH);
+    EXPECT_EQ(tank_controller_.get_state(), TankState::IDLE);
+
+    // Drain slightly to 950‰ so manual fill request will become FILL_REQUESTED
+    tank_controller_.on_tank_report(950, false, false, NOON_EPOCH);
+
+    farm::FillRequest req{ .circuit_id = 0 };
+
+    espnow::AppMessage msg{};
+    msg.sender_id = static_cast<uint8_t>(farm::NodeId::PUMP_CONTROL);
+    msg.payload_type = static_cast<uint8_t>(farm::PayloadType::FILL_REQUEST);
+    msg.payload_len = sizeof(farm::FillRequest);
+    memcpy(msg.payload, &req, sizeof(farm::FillRequest));
+
+    EXPECT_EQ(handler.handle_payload(msg), espnow::AckStatus::OK);
+
+    // Expect LoadControlTask to receive LoadIntent with desired_state = ON
+    EXPECT_CALL(mock_lct_, post_load_intent(::testing::Field(&LoadIntent::desired_state, LoadDesiredState::ON)))
+        .WillOnce(Return(ESP_OK));
+
+    handler.post_handle_payload(msg);
+
+    EXPECT_EQ(tank_controller_.get_state(), TankState::FILL_REQUESTED);
     EXPECT_EQ(command_mgr_.get_messages_received(), 1);
 }
