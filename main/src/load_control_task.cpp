@@ -265,8 +265,16 @@ void LoadControlTask::refresh_ui_snapshot()
         loads[i].node_id = entry.last_status.node_id;
         loads[i].circuit_id = entry.last_status.circuit_id;
         loads[i].control_mode = entry.last_status.control_mode;
-        loads[i].active_source = entry.assigned_source;
-        loads[i].load_state = entry.assigned_on ? farm::LoadState::RUNNING : farm::LoadState::IDLE;
+        if (entry.assigned_source != farm::PowerSource::UNKNOWN) {
+            loads[i].active_source = entry.assigned_source;
+        } else {
+            loads[i].active_source = entry.last_status.active_source;
+        }
+        if (entry.assigned_on || entry.last_status.load_state == farm::LoadState::RUNNING) {
+            loads[i].load_state = farm::LoadState::RUNNING;
+        } else {
+            loads[i].load_state = entry.last_status.load_state;
+        }
         loads[i].power_w = entry.last_status.power_w;
         loads[i].runtime_s = entry.last_status.runtime_s;
         loads[i].last_update_ts = entry.last_status.timestamp_ms;
