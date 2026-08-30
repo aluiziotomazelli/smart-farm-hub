@@ -75,6 +75,8 @@ uint16_t TankController::get_target_permille_for_tier(TankFillTier tier) const
     case TankFillTier::NORMAL_FILL:
         return config_.opportunistic_min_permille;
     case TankFillTier::OPPORTUNISTIC:
+        return config_.surplus_min_permille;
+    case TankFillTier::SOLAR_SURPLUS:
     case TankFillTier::MANUAL_REQUEST:
         return config_.target_fill_permille;
     case TankFillTier::NONE:
@@ -86,10 +88,10 @@ uint16_t TankController::get_target_permille_for_tier(TankFillTier tier) const
 uint32_t TankController::calculate_estimated_duration_s() const
 {
     if (backup_mode_) {
-        return config_.backup_fill_duration_s;
+        return float_switch_full_ ? 0 : config_.backup_fill_duration_s;
     }
 
-    if (current_tier_ == TankFillTier::NONE || float_switch_full_) {
+    if (current_tier_ == TankFillTier::NONE) {
         return 0;
     }
 
@@ -100,7 +102,8 @@ uint32_t TankController::calculate_estimated_duration_s() const
 
     uint16_t deficit = target - current_permille_;
     // Pure integer arithmetic: (deficit * 600) / rate_x10
-    return (static_cast<uint32_t>(deficit) * 600) / config_.fill_rate_permille_per_min_x10;
+    uint32_t duration_s = (static_cast<uint32_t>(deficit) * 600) / config_.fill_rate_permille_per_min_x10;
+    return (duration_s < config_.min_fill_duration_s) ? config_.min_fill_duration_s : duration_s;
 }
 
 void TankController::evaluate_policy()
@@ -138,7 +141,7 @@ void TankController::evaluate_policy()
         current_tier_ = float_switch_full_ ? TankFillTier::NONE : TankFillTier::NORMAL_FILL;
     }
     else if (current_permille_ < config_.critical_min_permille) {
-        // Critical level always triggers immediate emergency recovery, overriding cooldown
+        // Critical level (<300‰): emergency refill on ANY source, overriding cooldown
         current_tier_ = TankFillTier::CRITICAL_RECOVERY;
     }
     else if (in_cooldown) {
@@ -150,19 +153,23 @@ void TankController::evaluate_policy()
         current_tier_ = TankFillTier::NONE;
     }
     else if (in_pre_sunset_window && current_permille_ < config_.opportunistic_min_permille) {
-        // Pre-sunset window: escalate target to 100% (target_fill_permille)
+        // Pre-sunset window: escalate target for levels < 800‰ to top-off on SOLAR_PREFERRED
         current_tier_ = TankFillTier::OPPORTUNISTIC;
     }
     else if (current_permille_ < config_.normal_min_permille) {
+        // < 500‰: Normal refill
         current_tier_ = TankFillTier::NORMAL_FILL;
     }
     else if (current_permille_ < config_.opportunistic_min_permille) {
+        // 500..799‰: Opportunistic refill
         current_tier_ = TankFillTier::OPPORTUNISTIC;
     }
-    else if (current_permille_ < config_.target_fill_permille) {
-        current_tier_ = TankFillTier::OPPORTUNISTIC;
+    else if (current_permille_ < config_.surplus_min_permille) {
+        // 800..899‰: Pure solar surplus top-off (always SOLAR_ONLY)
+        current_tier_ = TankFillTier::SOLAR_SURPLUS;
     }
     else {
+        // >= 900‰: Satisfied / Hysteresis band
         current_tier_ = TankFillTier::NONE;
     }
 
@@ -194,7 +201,9 @@ LoadIntent TankController::get_current_intent() const
     intent.load_index = LoadIndex::PUMP;
     intent.max_hold_duration_s = 0; // Pump cannot be shed when filling is requested
 
-    if (state_ == TankState::IDLE || current_tier_ == TankFillTier::NONE) {
+    uint32_t duration_s = calculate_estimated_duration_s();
+
+    if (state_ == TankState::IDLE || current_tier_ == TankFillTier::NONE || duration_s == 0) {
         intent.desired_state = LoadDesiredState::OFF;
         intent.urgency = LoadUrgency::SHEDDABLE;
         intent.source_preference = SourcePreference::SOLAR_ONLY;
@@ -203,7 +212,7 @@ LoadIntent TankController::get_current_intent() const
     }
 
     intent.desired_state = LoadDesiredState::ON;
-    intent.estimated_on_duration_s = calculate_estimated_duration_s();
+    intent.estimated_on_duration_s = duration_s;
 
     time_t now = time_mgr_.get_timestamp_sec();
     bool is_day = sun_schedule_.is_daytime(now);
@@ -226,12 +235,12 @@ LoadIntent TankController::get_current_intent() const
 
     case TankFillTier::OPPORTUNISTIC:
         intent.urgency = LoadUrgency::OPPORTUNISTIC;
-        if (current_permille_ >= config_.opportunistic_min_permille) {
-            // Level >= 900‰: top-off strictly on solar surplus
-            intent.source_preference = SourcePreference::SOLAR_ONLY;
-        } else {
-            intent.source_preference = SourcePreference::SOLAR_PREFERRED;
-        }
+        intent.source_preference = SourcePreference::SOLAR_PREFERRED;
+        break;
+
+    case TankFillTier::SOLAR_SURPLUS:
+        intent.urgency = LoadUrgency::OPPORTUNISTIC;
+        intent.source_preference = SourcePreference::SOLAR_ONLY;
         break;
 
     case TankFillTier::NONE:

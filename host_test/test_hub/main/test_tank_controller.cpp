@@ -53,17 +53,17 @@ TEST_F(TankControllerTest, DurationCalculationWithoutMargin)
 {
     TankController tc(time_mgr_, sun_);
 
-    // Level 760‰ is in OPPORTUNISTIC tier (target is 1000‰)
-    // Deficit: 1000 - 760 = 240‰
+    // Level 760‰ is in OPPORTUNISTIC tier (target is surplus_min_permille = 900‰)
+    // Deficit: 900 - 760 = 140‰
     // Rate: 4.8 ‰/min = 0.080 ‰/sec
-    // Duration: 240 / 0.080 = 3000 seconds
+    // Duration: 140 / 0.080 = 1750 seconds
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
     tc.on_tank_report(760, /*float_switch_full=*/false, /*backup_mode=*/false, noon);
 
     EXPECT_EQ(tc.get_current_tier(), TankFillTier::OPPORTUNISTIC);
-    EXPECT_EQ(tc.calculate_estimated_duration_s(), 3000);
+    EXPECT_EQ(tc.calculate_estimated_duration_s(), 1750);
 }
 
 TEST_F(TankControllerTest, CriticalLevelTargetsNormalMinPermille)
@@ -108,7 +108,7 @@ TEST_F(TankControllerTest, TargetPermilleReachedTransitionsToIdle)
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
-    tc.on_tank_report(800, false, false, noon);
+    tc.on_tank_report(700, false, false, noon);
     EXPECT_EQ(tc.get_state(), TankState::FILL_REQUESTED);
 
     // Reaches 1000‰
@@ -117,27 +117,28 @@ TEST_F(TankControllerTest, TargetPermilleReachedTransitionsToIdle)
     EXPECT_EQ(tc.get_current_intent().desired_state, LoadDesiredState::OFF);
 }
 
-TEST_F(TankControllerTest, DaytimeHighLevelIsOpportunisticSolarOnly)
+TEST_F(TankControllerTest, DaytimeSurplusLevelIsOpportunisticSolarOnly)
 {
     TankController tc(time_mgr_, sun_);
 
-    // Noon, level 920‰ (>= 900‰ opportunistic threshold)
+    // Noon, level 850‰ (800 <= level < 900) -> SOLAR_SURPLUS tier, SOLAR_ONLY
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
-    tc.on_tank_report(920, false, false, noon);
+    tc.on_tank_report(850, false, false, noon);
 
     LoadIntent intent = tc.get_current_intent();
     EXPECT_EQ(intent.desired_state, LoadDesiredState::ON);
     EXPECT_EQ(intent.urgency, LoadUrgency::OPPORTUNISTIC);
     EXPECT_EQ(intent.source_preference, SourcePreference::SOLAR_ONLY);
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::SOLAR_SURPLUS);
 }
 
 TEST_F(TankControllerTest, DaytimeModerateLevelIsOpportunisticSolarPreferred)
 {
     TankController tc(time_mgr_, sun_);
 
-    // Noon, level 700‰ (500 <= level < 900)
+    // Noon, level 700‰ (500 <= level < 800) -> OPPORTUNISTIC tier, SOLAR_PREFERRED
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
@@ -147,13 +148,14 @@ TEST_F(TankControllerTest, DaytimeModerateLevelIsOpportunisticSolarPreferred)
     EXPECT_EQ(intent.desired_state, LoadDesiredState::ON);
     EXPECT_EQ(intent.urgency, LoadUrgency::OPPORTUNISTIC);
     EXPECT_EQ(intent.source_preference, SourcePreference::SOLAR_PREFERRED);
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::OPPORTUNISTIC);
 }
 
 TEST_F(TankControllerTest, DaytimeLowLevelIsNormalSolarPreferred)
 {
     TankController tc(time_mgr_, sun_);
 
-    // Noon, level 400‰ (< 500‰)
+    // Noon, level 400‰ (300 <= level < 500) -> NORMAL_FILL tier, SOLAR_PREFERRED
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
@@ -163,6 +165,7 @@ TEST_F(TankControllerTest, DaytimeLowLevelIsNormalSolarPreferred)
     EXPECT_EQ(intent.desired_state, LoadDesiredState::ON);
     EXPECT_EQ(intent.urgency, LoadUrgency::NORMAL);
     EXPECT_EQ(intent.source_preference, SourcePreference::SOLAR_PREFERRED);
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::NORMAL_FILL);
 }
 
 TEST_F(TankControllerTest, PreSunsetWindowEscalatesUrgencyToFillToTop)

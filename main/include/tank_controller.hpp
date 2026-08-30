@@ -16,14 +16,16 @@
  */
 struct TankPolicyConfig
 {
-    uint16_t target_fill_permille = 1000;        ///< 100.0% — target fill level
-    uint16_t opportunistic_min_permille = 900;   ///< 90.0% — top-off when surplus is available
-    uint16_t normal_min_permille = 500;          ///< 50.0% — standard refill threshold
-    uint16_t critical_min_permille = 300;        ///< 30.0% — critical threshold (emergency refill)
+    uint16_t target_fill_permille = 1000;        ///< 100.0% — Target fill level (top)
+    uint16_t surplus_min_permille = 900;         // 90.0% — Above this is hysteresis band (no fill initiated)
+    uint16_t opportunistic_min_permille = 800;   ///< 80.0% — 800..900 is pure solar surplus (SOLAR_ONLY)
+    uint16_t normal_min_permille = 500;          ///< 50.0% — 500..800 is daylight opportunistic (SOLAR_PREF)
+    uint16_t critical_min_permille = 300;        ///< 30.0% — 300..500 is normal refill (NORMAL, SOLAR_PREF); <300 is emergency
     uint8_t fill_rate_permille_per_min_x10 = 48; ///< 4.8 ‰ / min scaled by 10 (48 = 4.8 ‰/min)
     float pre_sunset_window_hours = 2.5f;        ///< Hours before sunset to accelerate fill
     uint32_t backup_fill_duration_s = 16 * 60;   ///< 16 minutes nominal fill duration in backup mode
     uint32_t manual_stop_cooldown_s = 30 * 60;   ///< 30 minutes cooldown after manual operator stop
+    uint32_t min_fill_duration_s = 70;           ///< Minimum 70s watchdog to cover 60s sensor cycle
 };
 
 /**
@@ -43,11 +45,12 @@ enum class TankState : uint8_t
  */
 enum class TankFillTier : uint8_t
 {
-    NONE = 0,               ///< Level satisfied, no fill needed (IDLE)
-    CRITICAL_RECOVERY = 1,  ///< Below critical (<300‰) -> target is normal_min_permille (500‰) on ANY source
-    NORMAL_FILL = 2,        ///< Below normal (<500‰) -> target is opportunistic_min_permille (900‰) on SOLAR_PREFERRED
-    OPPORTUNISTIC = 3,      ///< Below opportunistic (<900‰) -> target is target_fill_permille (1000‰) on SOLAR_ONLY/PRE_SUNSET
-    MANUAL_REQUEST = 4,     ///< Operator manual request via button -> target is target_fill_permille (1000‰)
+    NONE = 0,               ///< Level satisfied (>= 900‰), no fill needed (IDLE)
+    CRITICAL_RECOVERY = 1,  ///< < 300‰ -> target is normal_min_permille (500‰) on ANY source
+    NORMAL_FILL = 2,        ///< < 500‰ -> target is opportunistic_min_permille (800‰) on SOLAR_PREFERRED
+    OPPORTUNISTIC = 3,      ///< < 800‰ -> target is surplus_min_permille (900‰) on SOLAR_PREFERRED
+    SOLAR_SURPLUS = 4,      ///< < 900‰ -> target is target_fill_permille (1000‰) on SOLAR_ONLY
+    MANUAL_REQUEST = 5,     ///< Operator manual request via button -> target is target_fill_permille (1000‰)
 };
 
 /**
