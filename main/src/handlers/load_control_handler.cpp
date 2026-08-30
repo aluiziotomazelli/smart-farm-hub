@@ -77,14 +77,16 @@ void LoadControlHandler::post_handle_payload(const espnow::AppMessage& msg)
             .timestamp_ms = now_ms,
         };
 
-        // 3. Forward status report to LoadControlTask
-        load_control_task_.post_load_status(status_update);
-
-        // 4. If status belongs to PUMP, notify TankController to track actual pump state
+        // 3. If status belongs to PUMP, notify TankController first and post updated intent
         if (load_idx == LoadIndex::PUMP) {
             tank_controller_.on_pump_status_update(
                 report.load_state, report.active_source, report.runtime_s);
+            LoadIntent updated_intent = tank_controller_.get_current_intent();
+            load_control_task_.post_load_intent(updated_intent);
         }
+
+        // 4. Forward status report to LoadControlTask to execute arbitration with fresh intent
+        load_control_task_.post_load_status(status_update);
     } else {
         ESP_LOGW(TAG, "Received load status from unmapped node 0x%02X circuit %u", msg.sender_id, report.circuit_id);
     }
