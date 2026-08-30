@@ -10,6 +10,7 @@
 #include "interfaces/i_load_control_task.hpp"
 #include "interfaces/i_time_manager.hpp"
 #include "load_control_engine.hpp"
+#include "load_profiles.hpp"
 #include "ui_snapshot.hpp"
 
 namespace hub {
@@ -39,7 +40,7 @@ public:
         UiSnapshot& ui_snapshot,
         ILoadActuatorDispatcher& actuator_dispatcher,
         IEnergyMonitor& energy_monitor,
-        const PriorityConfig& priority_config = PriorityConfig{},
+        const PriorityConfig& priority_config = farm_loads::get_default_priority_config(),
         const LoadControlTaskConfig& config = {});
 
     ~LoadControlTask() override;

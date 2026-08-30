@@ -158,15 +158,22 @@ Rather than a static 100% target that would waste grid energy during night-time 
 | Tier (`TankFillTier`) | Trigger Threshold | Dynamic Fill Target | Urgency | Source Preference | Rationale |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`CRITICAL_RECOVERY`** | Level $< 300‰$ | `normal_min_permille` (500‰) | `CRITICAL` | `ANY` (Grid / Solar) | Immediate recovery from drought danger; does not waste grid power filling beyond safe level |
-| **`NORMAL_FILL`** | Level $< 500‰$ | `opportunistic_min_permille` (900‰) | `NORMAL` | `SOLAR_PREFERRED` | Standard daylight refill |
-| **`OPPORTUNISTIC`** | Level $< 900‰$ (or pre-sunset) | `target_fill_permille` (1000‰) | `OPPORTUNISTIC` | `SOLAR_ONLY` / `SOLAR_PREF` | Tops off tank strictly on solar surplus; escalates before sunset |
+| **`NORMAL_FILL`** | Level $< 500‰$ | `opportunistic_min_permille` (800‰) | `NORMAL` | `SOLAR_PREFERRED` | Standard daylight refill |
+| **`OPPORTUNISTIC`** | Level $< 800‰$ (or pre-sunset) | `surplus_min_permille` (900‰) | `OPPORTUNISTIC` | `SOLAR_PREFERRED` | Daylight opportunistic refill; escalates to top-off in pre-sunset window |
+| **`SOLAR_SURPLUS`** | $800‰ \le \text{Level} < 900‰$ | `target_fill_permille` (1000‰) | `OPPORTUNISTIC` | **`SOLAR_ONLY`** | Pure solar surplus top-off; never touches Grid |
 | **`MANUAL_REQUEST`** | Button `FILL_REQUEST` | `target_fill_permille` (1000‰) | `NORMAL` | `SOLAR_PREFERRED` (day) / `ANY` (night) | User-demanded full fill |
+| **`NONE`** | Level $\ge 900‰$ | - | `SHEDDABLE` | `SOLAR_ONLY` | Tank satisfied; serves as upper hysteresis band (no fill started) |
 
 ### 4.2 Seamless Tier Transition & Dynamic Watchdog
-- **Continuous Operation**: When rising level satisfies a tier (e.g., passing 500‰), if daylight conditions permit moving to `NORMAL_FILL`, the pump **remains running continuously** without contactor cycling.
-- **Dynamic Watchdog**: `calculate_estimated_duration_s()` computes deficit precisely against the active tier target, preventing over-allocation of watchdog timers.
+- **Continuous Operation**: When rising level satisfies a tier (e.g., passing 500‰), if daylight conditions permit moving to `OPPORTUNISTIC` / `SOLAR_SURPLUS`, the pump **remains running continuously** without contactor cycling.
+- **Dynamic Watchdog**: `calculate_estimated_duration_s()` computes deficit precisely against the active tier target with a 70s minimum floor (to ensure at least one 60s sensor reading arrives before timeout). If calculated duration is 0, the controller immediately forces `desired_state = OFF`.
+- **Pre-Sunset Window**: For levels $< 800‰$, the pre-sunset window escalates the fill target to 100% on `SOLAR_PREFERRED` to top off before dusk. Levels between $800‰$ and $900‰$ remain strictly `SOLAR_SURPLUS` (`SOLAR_ONLY`).
 
-### 4.3 Operator Manual Stop Cooldown Protection
+### 4.3 Unified Farm Load Profiles (`load_profiles.hpp`)
+- All load characteristics (expected running/idle Watts, continuous vs episodic, thermal hold limits, priority rank) are centrally defined in `main/include/load_profiles.hpp` (`farm_loads` namespace).
+- `LoadControlEngine` requires strictly positive solar generation (`solar_power_w_ > 0`) before allocating solar power, eliminating false-positive allocations on startup.
+
+### 4.4 Operator Manual Stop Cooldown Protection
 - If an operator manually stops the pump while filling (`LoadState::RUNNING` $\rightarrow$ `IDLE` with level $< 1000‰$), `TankController` clears `manual_fill_requested_` and enters a **30-minute cooldown**.
 - During cooldown, automatic routine refills are suppressed so the Hub does not immediately restart the pump against the operator's intention.
 - **Safety Overrides**: Cooldown is instantly bypassed if level drops into `CRITICAL_RECOVERY` ($< 300‰$) or if the operator presses the fill button again (`FILL_REQUEST`).

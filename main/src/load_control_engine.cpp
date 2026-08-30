@@ -247,7 +247,7 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
                                  load.last_status.selected_source == farm::PowerSource::GRID);
         farm::PowerSource locked_src = load.last_status.selected_source;
 
-        bool can_use_solar = solar_available_ && (remaining_solar_w >= cand.watts);
+        bool can_use_solar = solar_available_ && (solar_power_w_ > 0) && (remaining_solar_w >= cand.watts);
 
         // For opportunistic episodic loads waiting for thermal off-cycle window
         if (!cand.is_continuous && cand.urgency == LoadUrgency::OPPORTUNISTIC) {
