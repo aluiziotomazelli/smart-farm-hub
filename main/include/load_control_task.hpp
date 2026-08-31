@@ -114,6 +114,7 @@ private:
     volatile bool last_grid_available_{true};
 
     bool snapshot_dirty_{false};
+    std::array<int64_t, static_cast<size_t>(LoadIndex::MAX)> last_dispatch_ts_{};
 };
 
 } // namespace hub

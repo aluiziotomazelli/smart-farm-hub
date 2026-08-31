@@ -115,6 +115,7 @@ TEST_F(CommandManagerTest, AutoTimeSync_ArmsTimeSyncWhenClockDriftExceedsThresho
 TEST_F(CommandManagerTest, DispatchDecision_SendsLoadOnCommand)
 {
     CommandManager sut(mock_espnow_, node_registry_, mock_time_);
+    node_registry_.set_power_profile(farm::NodeId::PUMP_CONTROL, farm::PowerProfile::ALWAYS_ON);
 
     LoadControlDecision decision{
         .load_index = LoadIndex::PUMP,
@@ -139,9 +140,38 @@ TEST_F(CommandManagerTest, DispatchDecision_SendsLoadOnCommand)
     EXPECT_EQ(sut.get_commands_sent(), 1);
 }
 
+TEST_F(CommandManagerTest, DispatchDecision_ResolvesUnknownNodeToPumpControl)
+{
+    CommandManager sut(mock_espnow_, node_registry_, mock_time_);
+    node_registry_.set_power_profile(farm::NodeId::PUMP_CONTROL, farm::PowerProfile::ALWAYS_ON);
+
+    LoadControlDecision decision{
+        .load_index = LoadIndex::PUMP,
+        .node_id = farm::NodeId::UNKNOWN,
+        .circuit_id = 0,
+        .should_be_on = true,
+        .target_source = farm::PowerSource::SOLAR,
+        .watchdog_s = 60,
+    };
+
+    EXPECT_CALL(
+        mock_espnow_,
+        send_command(
+            static_cast<uint8_t>(farm::NodeId::PUMP_CONTROL),
+            static_cast<espnow::CommandType>(farm::CommandType::LOAD_ON),
+            _,
+            sizeof(farm::LoadOnCommand),
+            true))
+        .WillOnce(Return(ESP_OK));
+
+    EXPECT_TRUE(sut.dispatch_decision(decision));
+    EXPECT_EQ(sut.get_commands_sent(), 1);
+}
+
 TEST_F(CommandManagerTest, DispatchDecision_SendsLoadOffCommand)
 {
     CommandManager sut(mock_espnow_, node_registry_, mock_time_);
+    node_registry_.set_power_profile(farm::NodeId::PUMP_CONTROL, farm::PowerProfile::ALWAYS_ON);
 
     LoadControlDecision decision{
         .load_index = LoadIndex::PUMP,

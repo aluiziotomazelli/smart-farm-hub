@@ -16,16 +16,6 @@
 namespace hub {
 
 /**
- * @brief Represents a pending command queued in RAM for a sleeping node.
- */
-struct PendingCommandItem
-{
-    farm::NodeId node_id = farm::NodeId::UNKNOWN;
-    espnow::CommandType command = espnow::CommandType::START_OTA;
-    bool requires_ack = true;
-};
-
-/**
  * @class CommandManager
  * @brief Thread-safe implementation of ICommandManager.
  *
@@ -46,7 +36,9 @@ public:
     ~CommandManager() override = default;
 
     /** @copydoc ICommandManager::send_command */
-    bool send_command(farm::NodeId target_node, espnow::CommandType cmd, bool requires_ack = true) override;
+    bool send_command(const CommandItem& item) override;
+
+    using ICommandManager::send_command;
 
     /** @copydoc ICommandManager::process_node_wake */
     void process_node_wake(farm::NodeId node_id, uint64_t node_unix_time_ms) override;
@@ -68,9 +60,9 @@ public:
     uint32_t get_commands_sent() const override { return commands_sent_.load(); }
 
     /**
-     * @brief Pushes a command into the pending RAM FIFO for a node.
+     * @brief Pushes a command item into the pending RAM FIFO for a node.
      */
-    bool push_pending_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack = true);
+    bool push_pending_command(const CommandItem& item);
 
     /**
      * @brief Drains and dispatches all pending FIFO commands for a specific node.
@@ -85,7 +77,7 @@ public:
     /**
      * @brief Dispatches a single command over ESP-NOW transport.
      */
-    esp_err_t dispatch_single_command(farm::NodeId node_id, espnow::CommandType cmd, bool requires_ack);
+    esp_err_t dispatch_single_command(farm::NodeId node_id, const CommandItem& item);
 
 private:
     espnow::IEspNowManager& espnow_;
@@ -96,7 +88,7 @@ private:
     std::atomic<uint32_t> commands_sent_{0};
 
     mutable std::mutex queue_mutex_;
-    etl::queue<PendingCommandItem, MAX_PENDING_QUEUE_SIZE> pending_queue_{};
+    etl::queue<CommandItem, MAX_PENDING_QUEUE_SIZE> pending_queue_{};
 
     esp_err_t create_sync_time_packet(farm::TimeSyncCommand& out_sync_cmd) const;
 };

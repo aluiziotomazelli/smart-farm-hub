@@ -237,10 +237,19 @@ void LoadControlTask::process_active_queue_member(QueueSetMemberHandle_t member,
 
 void LoadControlTask::evaluate_and_dispatch(int64_t now_ms)
 {
-    (void)now_ms;
+    constexpr int64_t COMMAND_RETRY_INTERVAL_MS = 3000;
+
     auto decisions = engine_.evaluate_arbitration();
     for (const auto& dec : decisions) {
         if (dec.action_required) {
+            size_t idx = static_cast<size_t>(dec.load_index);
+            if (idx < last_dispatch_ts_.size()) {
+                if (now_ms - last_dispatch_ts_[idx] < COMMAND_RETRY_INTERVAL_MS) {
+                    continue;
+                }
+                last_dispatch_ts_[idx] = now_ms;
+            }
+
             ESP_LOGI(
                 TAG,
                 "Dispatching decision: Load %u -> State: %s | Source: %s | Watchdog: %lus",

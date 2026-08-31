@@ -10,6 +10,37 @@
 namespace hub {
 
 /**
+ * @struct CommandItem
+ * @brief Represents a network command item for remote farm nodes.
+ */
+struct CommandItem
+{
+    farm::NodeId node_id = farm::NodeId::UNKNOWN;
+    espnow::CommandType command = espnow::CommandType::START_OTA;
+    bool requires_ack = true;
+    uint8_t payload[32] = {0};
+    size_t payload_len = 0;
+
+    constexpr CommandItem() = default;
+
+    CommandItem(
+        farm::NodeId target,
+        espnow::CommandType cmd,
+        bool ack = true,
+        const void* data = nullptr,
+        size_t len = 0)
+        : node_id(target)
+        , command(cmd)
+        , requires_ack(ack)
+        , payload_len(len > sizeof(payload) ? sizeof(payload) : len)
+    {
+        if (data != nullptr && payload_len > 0) {
+            memcpy(payload, data, payload_len);
+        }
+    }
+};
+
+/**
  * @interface ICommandManager
  * @brief Interface for commanding remote farm nodes (immediate dispatch or sleep-aware FIFO)
  *        and dispatching electrical load control decisions.
@@ -24,12 +55,18 @@ public:
      * Checks the node's PowerProfile in NodeRegistry:
      * - ALWAYS_ON: Sends immediately via ESP-NOW.
      * - DEEP_SLEEP / LOW_POWER: Enqueues into RAM FIFO queue for next wake cycle.
-     * @param target_node Destination node identifier.
-     * @param cmd Command type to dispatch.
-     * @param requires_ack If true, requires transport acknowledgment.
-     * @return true if dispatched or enqueued successfully, false if queue full.
+     * @param item The fully constructed CommandItem to dispatch or enqueue.
+     * @return true if dispatched or enqueued successfully, false on error/full queue.
      */
-    virtual bool send_command(farm::NodeId target_node, espnow::CommandType cmd, bool requires_ack = true) = 0;
+    virtual bool send_command(const CommandItem& item) = 0;
+
+    /**
+     * @brief Convenience overload for simple commands without payload.
+     */
+    bool send_command(farm::NodeId target_node, espnow::CommandType cmd, bool requires_ack = true)
+    {
+        return send_command(CommandItem{target_node, cmd, requires_ack});
+    }
 
     /**
      * @brief Called when a node wakes up and sends telemetry.
