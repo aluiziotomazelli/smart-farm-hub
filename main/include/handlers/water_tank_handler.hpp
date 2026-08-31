@@ -36,6 +36,9 @@ public:
     void post_handle_payload(const espnow::AppMessage& msg) override;
 
 private:
+    void post_handle_fill_request(const espnow::AppMessage& msg);
+    void post_handle_water_report(const espnow::AppMessage& msg);
+
     UiSnapshot& ui_snapshot_;
     INodeRegistry& node_registry_;
     TankController& tank_controller_;

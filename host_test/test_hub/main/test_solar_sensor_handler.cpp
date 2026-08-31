@@ -71,10 +71,7 @@ TEST_F(SolarSensorHandlerTest, ValidPayload_UpdatesUiSnapshotNodeRegistryAndPost
     msg.rssi = -55;
     memcpy(msg.payload, &report, sizeof(report));
 
-    // Expect LoadControlTask to receive solar update with computed power > 0
-    EXPECT_CALL(mock_lct_, post_solar_update(::testing::Field(&SolarPowerUpdate::power_w, ::testing::Gt(1000))))
-        .WillOnce(Return(ESP_OK));
-
+    // Verify handle_payload validates and updates NodeRegistry and UiSnapshot
     EXPECT_EQ(handler.handle_payload(msg), espnow::AckStatus::OK);
 
     // Verify NodeRegistry was updated
@@ -96,6 +93,12 @@ TEST_F(SolarSensorHandlerTest, ValidPayload_UpdatesUiSnapshotNodeRegistryAndPost
     EXPECT_FALSE(snapshot.is_solar_night());
     EXPECT_EQ(snapshot.solar_node_unix_time, 1700000000000ULL);
     EXPECT_GT(snapshot.solar_power_w_instant, 1000);
+
+    // Expect LoadControlTask to receive solar update with computed power > 0 during post_handle_payload (after ACK)
+    EXPECT_CALL(mock_lct_, post_solar_update(::testing::Field(&SolarPowerUpdate::power_w, ::testing::Gt(1000))))
+        .WillOnce(Return(ESP_OK));
+
+    handler.post_handle_payload(msg);
 }
 
 TEST_F(SolarSensorHandlerTest, PostHandlePayload_DispatchesNodeWakeToCommandManager)

@@ -30,6 +30,15 @@ WaterTankHandler::WaterTankHandler(
 
 espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg)
 {
+    if (msg.payload_type == static_cast<uint8_t>(farm::PayloadType::FILL_REQUEST)) {
+        if (msg.payload_len < sizeof(farm::FillRequest)) {
+            ESP_LOGE(TAG, "Invalid FILL_REQUEST payload length %zu received from node 0x%02X",
+                     msg.payload_len, msg.sender_id);
+            return espnow::AckStatus::ERROR_INVALID_DATA;
+        }
+        return espnow::AckStatus::OK;
+    }
+
     if (msg.payload_len < sizeof(farm::WaterLevelReport)) {
         ESP_LOGE(TAG, "Invalid payload length %zu received from node 0x%02X (expected >= %zu)",
                  msg.payload_len, msg.sender_id, sizeof(farm::WaterLevelReport));
@@ -58,7 +67,59 @@ espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg
         report.backup_mode_active,
         report.unix_time);
 
-    // 4. Ingest telemetry into TankController domain logic
+    return espnow::AckStatus::OK;
+}
+
+void WaterTankHandler::post_handle_payload(const espnow::AppMessage& msg)
+{
+    if (msg.payload_type == static_cast<uint8_t>(farm::PayloadType::FILL_REQUEST)) {
+        post_handle_fill_request(msg);
+    }
+    else {
+        post_handle_water_report(msg);
+    }
+}
+
+void WaterTankHandler::post_handle_fill_request(const espnow::AppMessage& msg)
+{
+    if (msg.payload_len < sizeof(farm::FillRequest)) {
+        return;
+    }
+
+    farm::FillRequest req{};
+    memcpy(&req, msg.payload, sizeof(farm::FillRequest));
+
+    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
+
+    ESP_LOGI(
+        TAG,
+        "[FILL REQUEST] Manual fill requested by node 0x%02X (circuit=%u) | RSSI: %d dBm",
+        msg.sender_id,
+        req.circuit_id,
+        msg.rssi);
+
+    // 1. Trigger manual fill in TankController FSM
+    tank_controller_.on_manual_fill_request();
+
+    // 2. Post updated LoadIntent to LoadControlTask
+    LoadIntent intent = tank_controller_.get_current_intent();
+    load_control_task_.post_load_intent(intent);
+
+    command_mgr_.process_node_wake(node_id, 0);
+}
+
+void WaterTankHandler::post_handle_water_report(const espnow::AppMessage& msg)
+{
+    if (msg.payload_len < sizeof(farm::WaterLevelReport)) {
+        return;
+    }
+
+    farm::WaterLevelReport report{};
+    memcpy(&report, msg.payload, sizeof(farm::WaterLevelReport));
+
+    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
+
+    // 1. Ingest telemetry into TankController domain logic
     time_t report_time = static_cast<time_t>(report.unix_time / 1000);
     tank_controller_.on_tank_report(
         report.level_permille,
@@ -66,17 +127,17 @@ espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg
         report.backup_mode_active,
         report_time);
 
-    // 5. Post arbitrated LoadIntent to LoadControlTask
+    // 2. Post arbitrated LoadIntent to LoadControlTask
     LoadIntent intent = tank_controller_.get_current_intent();
     load_control_task_.post_load_intent(intent);
 
-    // 6. Forward level update to Pump Control node for local display
+    // 3. Forward level update to Pump Control node for local display
     command_mgr_.broadcast_tank_level(
         0, report.level_permille, report.backup_mode_active, report.float_switch_is_full);
 
     ESP_LOGI(
         TAG,
-        "[WATER TANK] Level: %u\u2030 | Distance: %.1f cm | Battery: %u mV (%u%%) "
+        "[WATER TANK] Level: %u‰ | Distance: %.1f cm | Battery: %u mV (%u%%) "
         "| Float: %s | Backup: %s | Intent State: %s | Urgency: %u | RSSI: %d dBm",
         report.level_permille,
         report.distance_cm,
@@ -88,20 +149,7 @@ espnow::AckStatus WaterTankHandler::handle_payload(const espnow::AppMessage& msg
         static_cast<unsigned>(intent.urgency),
         msg.rssi);
 
-    return espnow::AckStatus::OK;
-}
-
-void WaterTankHandler::post_handle_payload(const espnow::AppMessage& msg)
-{
-    auto node_id = static_cast<farm::NodeId>(msg.sender_id);
-    uint64_t unix_time = 0;
-
-    if (msg.payload_len >= sizeof(farm::WaterLevelReport)) {
-        const auto* report = reinterpret_cast<const farm::WaterLevelReport*>(msg.payload);
-        unix_time = report->unix_time;
-    }
-
-    command_mgr_.process_node_wake(node_id, unix_time);
+    command_mgr_.process_node_wake(node_id, report.unix_time);
 }
 
 } // namespace hub

@@ -242,41 +242,76 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
     int32_t remaining_solar_w = solar_available_ ? static_cast<int32_t>(solar_power_w_) : 0;
 
     for (auto& cand : active_candidates) {
-        bool can_use_solar = solar_available_ && (remaining_solar_w >= cand.watts);
+        auto& load = loads_[cand.index];
+        bool is_source_locked = (load.last_status.selected_source == farm::PowerSource::SOLAR ||
+                                 load.last_status.selected_source == farm::PowerSource::GRID);
+        farm::PowerSource locked_src = load.last_status.selected_source;
+
+        bool can_use_solar = solar_available_ && (solar_power_w_ > 0) && (remaining_solar_w >= cand.watts);
 
         // For opportunistic episodic loads waiting for thermal off-cycle window
         if (!cand.is_continuous && cand.urgency == LoadUrgency::OPPORTUNISTIC) {
-            auto win_state = loads_[cand.index].window_state;
+            auto win_state = load.window_state;
             if (win_state == EpisodicWindowState::WAITING_FOR_WINDOW) {
                 continue; // Hold in waiting state
             }
         }
 
-        if (can_use_solar) {
-            loads_[cand.index].assigned_on = true;
-            loads_[cand.index].assigned_source = farm::PowerSource::SOLAR;
-            loads_[cand.index].current_watchdog_s = cand.watchdog_s;
-            remaining_solar_w -= cand.watts;
-        } else if (grid_available_ && cand.source_pref != SourcePreference::SOLAR_ONLY) {
-            // Assign to Grid if allowed
-            loads_[cand.index].assigned_on = true;
-            loads_[cand.index].assigned_source = farm::PowerSource::GRID;
-            loads_[cand.index].current_watchdog_s = cand.watchdog_s;
+        if (is_source_locked && locked_src != farm::PowerSource::UNKNOWN) {
+            // Actuator source is physically locked by operator switch
+            if (locked_src == farm::PowerSource::SOLAR) {
+                if (can_use_solar) {
+                    load.assigned_on = true;
+                    load.assigned_source = farm::PowerSource::SOLAR;
+                    load.current_watchdog_s = cand.watchdog_s;
+                    remaining_solar_w -= cand.watts;
+                } else {
+                    // Cannot fit on solar and cannot fallback to grid because source is locked
+                    load.assigned_on = false;
+                    load.assigned_source = farm::PowerSource::UNKNOWN;
+                }
+            } else if (locked_src == farm::PowerSource::GRID) {
+                if (grid_available_) {
+                    load.assigned_on = true;
+                    load.assigned_source = farm::PowerSource::GRID;
+                    load.current_watchdog_s = cand.watchdog_s;
+                } else {
+                    load.assigned_on = false;
+                    load.assigned_source = farm::PowerSource::UNKNOWN;
+                }
+            }
         } else {
-            // Cannot be satisfied
-            loads_[cand.index].assigned_on = false;
-            loads_[cand.index].assigned_source = farm::PowerSource::UNKNOWN;
+            // Normal AUTO mode source allocation
+            if (can_use_solar) {
+                load.assigned_on = true;
+                load.assigned_source = farm::PowerSource::SOLAR;
+                load.current_watchdog_s = cand.watchdog_s;
+                remaining_solar_w -= cand.watts;
+            } else if (grid_available_ && cand.source_pref != SourcePreference::SOLAR_ONLY) {
+                // Assign to Grid if allowed
+                load.assigned_on = true;
+                load.assigned_source = farm::PowerSource::GRID;
+                load.current_watchdog_s = cand.watchdog_s;
+            } else {
+                // Cannot be satisfied
+                load.assigned_on = false;
+                load.assigned_source = farm::PowerSource::UNKNOWN;
+            }
         }
     }
 
     // 4. Fine Packing / Small Load Opportunistic Recovery (Tiebreaker 2: Wattage vs Deficit)
     // If there is residual solar power left, see if any smaller load currently assigned to GRID
-    // can fit in the leftover solar watts without displacing larger loads.
+    // can fit in the leftover solar watts without displacing larger loads (only for unlocked loads).
     for (auto& cand : active_candidates) {
-        if (loads_[cand.index].assigned_on &&
-            loads_[cand.index].assigned_source == farm::PowerSource::GRID &&
+        auto& load = loads_[cand.index];
+        bool is_source_locked = (load.last_status.selected_source == farm::PowerSource::SOLAR ||
+                                 load.last_status.selected_source == farm::PowerSource::GRID);
+        if (!is_source_locked &&
+            load.assigned_on &&
+            load.assigned_source == farm::PowerSource::GRID &&
             remaining_solar_w >= cand.watts) {
-            loads_[cand.index].assigned_source = farm::PowerSource::SOLAR;
+            load.assigned_source = farm::PowerSource::SOLAR;
             remaining_solar_w -= cand.watts;
         }
     }
@@ -287,7 +322,30 @@ etl::vector<LoadControlDecision, static_cast<size_t>(LoadIndex::MAX)> LoadContro
         bool current_on = (load.last_status.load_state == farm::LoadState::RUNNING);
         farm::PowerSource current_src = load.last_status.active_source;
 
-        bool state_differs = (current_on != load.assigned_on) || (current_src != load.assigned_source);
+        // If load is in FULL_MANUAL, hub only observes telemetry — never actuates
+        if (load.last_status.control_mode == farm::ControlMode::FULL_MANUAL) {
+            continue;
+        }
+
+        bool state_differs = false;
+        if (load.assigned_on) {
+            // Desired state is ON: action required if currently OFF, or if running on a different source
+            state_differs = !current_on || (current_src != load.assigned_source);
+        } else {
+            // Desired state is OFF:
+            // If in MANUAL_RUN, operator started the load locally.
+            // Hub only sends LOAD_OFF if desired_state was explicitly evaluated as OFF
+            // (e.g. TankController decided target level reached / emergency).
+            if (load.last_status.control_mode == farm::ControlMode::MANUAL_RUN) {
+                // If TankController has not requested fill and tank is satisfied (or emergency),
+                // but pump was started by operator, we let operator run UNLESS tank is full (checked in TC).
+                // When TC is satisfied (IDLE), desired_state is OFF. But if TC is in FILL_REQUESTED/FILLING, desired_state is ON.
+                // If desired_state == OFF and not full, operator manual start is preserved:
+                state_differs = false;
+            } else {
+                state_differs = current_on;
+            }
+        }
 
         LoadControlDecision dec;
         dec.load_index = load.load_index;

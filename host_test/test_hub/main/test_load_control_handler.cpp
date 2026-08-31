@@ -11,6 +11,8 @@
 #include "mock_load_control_task.hpp"
 #include "mock_time_manager.hpp"
 #include "node_registry.hpp"
+#include "sun_schedule.hpp"
+#include "tank_controller.hpp"
 
 using namespace hub;
 using ::testing::_;
@@ -26,17 +28,20 @@ protected:
     time_manager::MockTimeManager mock_time_;
     CommandManager command_mgr_{ mock_espnow_, node_registry_, mock_time_ };
     NiceMock<idf_hals::MockTimerHAL> mock_timer_;
+    SunSchedule sun_schedule_{ -23.5505f, -3.0f };
+    TankController tank_controller_{ mock_time_, sun_schedule_ };
 
     void SetUp() override
     {
         ON_CALL(mock_timer_, get_time_us()).WillByDefault(Return(1000000ULL)); // 1000 ms
         ON_CALL(mock_time_, get_timestamp_ms()).WillByDefault(Return(1700000000000ULL));
+        ON_CALL(mock_time_, get_timestamp_sec()).WillByDefault(Return(1700000000));
     }
 };
 
 TEST_F(LoadControlHandlerTest, InvalidPayloadLength_ReturnsError)
 {
-    LoadControlHandler handler(node_registry_, mock_lct_, command_mgr_, mock_timer_);
+    LoadControlHandler handler(node_registry_, tank_controller_, mock_lct_, command_mgr_, mock_timer_);
 
     espnow::AppMessage msg{};
     msg.sender_id = static_cast<uint8_t>(farm::NodeId::PUMP_CONTROL);
@@ -47,13 +52,14 @@ TEST_F(LoadControlHandlerTest, InvalidPayloadLength_ReturnsError)
 
 TEST_F(LoadControlHandlerTest, ValidPumpControlPayload_UpdatesNodeRegistryAndPostsToLct)
 {
-    LoadControlHandler handler(node_registry_, mock_lct_, command_mgr_, mock_timer_);
+    LoadControlHandler handler(node_registry_, tank_controller_, mock_lct_, command_mgr_, mock_timer_);
 
     farm::LoadControlStatus report{};
     report.circuit_id = 0;
     report.power_profile = farm::PowerProfile::ALWAYS_ON;
     report.control_mode = farm::ControlMode::AUTO;
-    report.active_power_source = farm::PowerSource::SOLAR;
+    report.selected_source = farm::PowerSource::AUTO;
+    report.active_source = farm::PowerSource::SOLAR;
     report.load_state = farm::LoadState::RUNNING;
     report.power_w = 1500;
     report.runtime_s = 120;
@@ -65,28 +71,32 @@ TEST_F(LoadControlHandlerTest, ValidPumpControlPayload_UpdatesNodeRegistryAndPos
     msg.payload_len = sizeof(report);
     memcpy(msg.payload, &report, sizeof(report));
 
-    // Verify LCT receives LoadStatusUpdate with matching pump fields
+    // Verify handle_payload validates and updates NodeRegistry
+    EXPECT_EQ(handler.handle_payload(msg), espnow::AckStatus::OK);
+
+    farm::NodeMetadata meta{};
+    EXPECT_TRUE(node_registry_.get_node_info(farm::NodeId::PUMP_CONTROL, meta));
+    EXPECT_EQ(meta.power_profile, farm::PowerProfile::ALWAYS_ON);
+
+    // Verify LCT receives LoadStatusUpdate when post_handle_payload is called (after ACK)
     EXPECT_CALL(mock_lct_, post_load_status(::testing::AllOf(
         ::testing::Field(&LoadStatusUpdate::load_index, LoadIndex::PUMP),
         ::testing::Field(&LoadStatusUpdate::power_w, 1500),
         ::testing::Field(&LoadStatusUpdate::runtime_s, 120),
         ::testing::Field(&LoadStatusUpdate::load_state, farm::LoadState::RUNNING),
+        ::testing::Field(&LoadStatusUpdate::selected_source, farm::PowerSource::AUTO),
         ::testing::Field(&LoadStatusUpdate::active_source, farm::PowerSource::SOLAR)
     ))).WillOnce(Return(ESP_OK));
 
-    EXPECT_EQ(handler.handle_payload(msg), espnow::AckStatus::OK);
-
-    // Verify NodeRegistry has node profile registered
-    farm::NodeMetadata meta{};
-    EXPECT_TRUE(node_registry_.get_node_info(farm::NodeId::PUMP_CONTROL, meta));
-    EXPECT_EQ(meta.power_profile, farm::PowerProfile::ALWAYS_ON);
+    handler.post_handle_payload(msg);
 }
 
 TEST_F(LoadControlHandlerTest, PostHandlePayload_DispatchesNodeWakeToCommandManager)
 {
-    LoadControlHandler handler(node_registry_, mock_lct_, command_mgr_, mock_timer_);
+    LoadControlHandler handler(node_registry_, tank_controller_, mock_lct_, command_mgr_, mock_timer_);
 
     farm::LoadControlStatus report{};
+    report.circuit_id = 0;
     report.unix_time = 1700000000000ULL;
 
     espnow::AppMessage msg{};

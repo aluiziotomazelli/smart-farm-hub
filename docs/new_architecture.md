@@ -112,10 +112,10 @@ Instead of polling, `LoadControlTask` blocks on a FreeRTOS `QueueSet` (`xQueueSe
 ## 6. Message Handlers & Domain Integration
 
 ### 6.1 `WaterTankHandler`
-- Receives incoming `farm::WaterLevelReport`.
+- Receives incoming `farm::WaterLevelReport` and `farm::FillRequest`.
 - Updates `NodeRegistry::set_power_profile`.
 - Updates `UiSnapshot::update_water_tank`.
-- Feeds `TankController::on_tank_report` to compute policy and fill duration.
+- Feeds `TankController::on_tank_report` or `TankController::on_manual_fill_request` to evaluate policy and fill duration.
 - Posts resulting `LoadIntent` to `ILoadControlTask::post_load_intent`.
 - Forwards `TANK_LEVEL_UPDATE` to `CommandManager::broadcast_tank_level` for actuator node local display updates.
 - Triggers `CommandManager::process_node_wake`.
@@ -130,9 +130,10 @@ Instead of polling, `LoadControlTask` blocks on a FreeRTOS `QueueSet` (`xQueueSe
 - Triggers `CommandManager::process_node_wake`.
 
 ### 6.3 `LoadControlHandler`
-- Receives incoming `farm::LoadControlStatusReport` from actuator nodes (e.g. Pump Control).
-- Formats `LoadStatusUpdate` with circuit ID, load state, operating mode, active power source, instant watts, and runtime counters.
+- Receives incoming `farm::LoadControlStatus` report from actuator nodes (e.g. Pump Control).
+- Formats `LoadStatusUpdate` with circuit ID, load state, control mode (`AUTO`, `MANUAL_RUN`, `FULL_MANUAL`), selected source (physical switch), active source (contactor engaged), instant watts, and runtime counters.
 - Posts status directly to `ILoadControlTask::post_load_status` (overwriting the dedicated queue for that `LoadIndex`).
+- Forwards pump state to `TankController::on_pump_status_update`, managing manual stop cooldown and manual fill completion.
 - Triggers `CommandManager::process_node_wake`.
 
 ---

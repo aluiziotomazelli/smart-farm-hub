@@ -237,10 +237,19 @@ void LoadControlTask::process_active_queue_member(QueueSetMemberHandle_t member,
 
 void LoadControlTask::evaluate_and_dispatch(int64_t now_ms)
 {
-    (void)now_ms;
+    constexpr int64_t COMMAND_RETRY_INTERVAL_MS = 3000;
+
     auto decisions = engine_.evaluate_arbitration();
     for (const auto& dec : decisions) {
         if (dec.action_required) {
+            size_t idx = static_cast<size_t>(dec.load_index);
+            if (idx < last_dispatch_ts_.size()) {
+                if (now_ms - last_dispatch_ts_[idx] < COMMAND_RETRY_INTERVAL_MS) {
+                    continue;
+                }
+                last_dispatch_ts_[idx] = now_ms;
+            }
+
             ESP_LOGI(
                 TAG,
                 "Dispatching decision: Load %u -> State: %s | Source: %s | Watchdog: %lus",
@@ -257,7 +266,7 @@ void LoadControlTask::evaluate_and_dispatch(int64_t now_ms)
 
 void LoadControlTask::refresh_ui_snapshot()
 {
-    std::array<LoadState, static_cast<size_t>(LoadIndex::MAX)> loads{};
+    std::array<LoadUiSnapshot, static_cast<size_t>(LoadIndex::MAX)> loads{};
     std::array<EpisodicWindowState, static_cast<size_t>(LoadIndex::MAX)> window_states{};
 
     for (size_t i = 0; i < static_cast<size_t>(LoadIndex::MAX); ++i) {
@@ -265,8 +274,17 @@ void LoadControlTask::refresh_ui_snapshot()
         loads[i].node_id = entry.last_status.node_id;
         loads[i].circuit_id = entry.last_status.circuit_id;
         loads[i].control_mode = entry.last_status.control_mode;
-        loads[i].active_source = entry.assigned_source;
-        loads[i].load_state = entry.assigned_on ? farm::LoadState::RUNNING : farm::LoadState::IDLE;
+        loads[i].selected_source = entry.last_status.selected_source;
+        if (entry.assigned_source != farm::PowerSource::UNKNOWN) {
+            loads[i].active_source = entry.assigned_source;
+        } else {
+            loads[i].active_source = entry.last_status.active_source;
+        }
+        if (entry.assigned_on || entry.last_status.load_state == farm::LoadState::RUNNING) {
+            loads[i].load_state = farm::LoadState::RUNNING;
+        } else {
+            loads[i].load_state = entry.last_status.load_state;
+        }
         loads[i].power_w = entry.last_status.power_w;
         loads[i].runtime_s = entry.last_status.runtime_s;
         loads[i].last_update_ts = entry.last_status.timestamp_ms;

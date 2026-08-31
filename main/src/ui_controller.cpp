@@ -504,10 +504,9 @@ void UIController::render_pump_screen(const UiSnapshotData& data)
 
     // --- Line 1 (y=32): Mode Indicators (Auto:[ ]  Lock:[ ]  Man:[ ]) ---
     y_pos = 32;
-    bool is_auto = (pump.control_mode == farm::ControlMode::AUTO);
-    bool is_lock = (pump.control_mode == farm::ControlMode::SOURCE_LOCKED);
-    bool is_man =
-        (pump.control_mode == farm::ControlMode::STOP_OVERRIDE || pump.control_mode == farm::ControlMode::FULL_MANUAL);
+    bool is_lock = (pump.selected_source == farm::PowerSource::SOLAR || pump.selected_source == farm::PowerSource::GRID);
+    bool is_man = (pump.control_mode == farm::ControlMode::MANUAL_RUN || pump.control_mode == farm::ControlMode::FULL_MANUAL);
+    bool is_auto = (pump.control_mode == farm::ControlMode::AUTO && !is_lock && !is_man);
 
     // Auto (Left at x=0)
     snprintf(buf, sizeof(buf), "%s", I18n::get(StrId::LABEL_AUTO));
@@ -942,12 +941,12 @@ void UIController::render_pump_last_report_screen(const UiSnapshotData& data)
     const char* mode_str = "UNK";
     switch (pump.control_mode) {
     case farm::ControlMode::AUTO:
-        mode_str = I18n::get(StrId::LABEL_AUTO);
+        mode_str = (pump.selected_source == farm::PowerSource::SOLAR || pump.selected_source == farm::PowerSource::GRID)
+                       ? I18n::get(StrId::LABEL_LOCK)
+                       : I18n::get(StrId::LABEL_AUTO);
         break;
-    case farm::ControlMode::SOURCE_LOCKED:
-    case farm::ControlMode::STOP_OVERRIDE:
-        mode_str = I18n::get(StrId::LABEL_LOCK);
-        break;
+    case farm::ControlMode::MANUAL_RUN:
+        mode_str = I18n::get(StrId::LABEL_MAN);
         break;
     case farm::ControlMode::FULL_MANUAL:
         mode_str = I18n::get(StrId::LABEL_MAN);
@@ -1090,16 +1089,15 @@ void UIController::render_loads_screen(const UiSnapshotData& data)
     const char* mode_str = "UNK";
     switch (pump.control_mode) {
     case farm::ControlMode::AUTO:
-        mode_str = "AUTO";
+        mode_str = (pump.selected_source == farm::PowerSource::SOLAR || pump.selected_source == farm::PowerSource::GRID)
+                       ? "LOCK"
+                       : "AUTO";
         break;
-    case farm::ControlMode::SOURCE_LOCKED:
-        mode_str = "LOCK";
-        break;
-    case farm::ControlMode::STOP_OVERRIDE:
-        mode_str = "STOP";
+    case farm::ControlMode::MANUAL_RUN:
+        mode_str = "MAN";
         break;
     case farm::ControlMode::FULL_MANUAL:
-        mode_str = "MAN";
+        mode_str = "FMAN";
         break;
     default:
         break;

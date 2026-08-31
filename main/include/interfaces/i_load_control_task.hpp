@@ -3,7 +3,6 @@
 
 #include "esp_err.h"
 #include "load_control_types.hpp"
-#include "load_types.hpp"
 
 namespace hub {
 

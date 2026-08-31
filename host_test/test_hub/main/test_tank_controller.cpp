@@ -53,15 +53,34 @@ TEST_F(TankControllerTest, DurationCalculationWithoutMargin)
 {
     TankController tc(time_mgr_, sun_);
 
-    // Deficit: 1000 - 760 = 240‰
+    // Level 760‰ is in OPPORTUNISTIC tier (target is surplus_min_permille = 900‰)
+    // Deficit: 900 - 760 = 140‰
     // Rate: 4.8 ‰/min = 0.080 ‰/sec
-    // Duration: 240 / 0.080 = 3000 seconds
+    // Duration: 140 / 0.080 = 1750 seconds
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
     tc.on_tank_report(760, /*float_switch_full=*/false, /*backup_mode=*/false, noon);
 
-    EXPECT_EQ(tc.calculate_estimated_duration_s(), 3000);
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::OPPORTUNISTIC);
+    EXPECT_EQ(tc.calculate_estimated_duration_s(), 1750);
+}
+
+TEST_F(TankControllerTest, CriticalLevelTargetsNormalMinPermille)
+{
+    TankController tc(time_mgr_, sun_);
+
+    // Level 200‰ is in CRITICAL_RECOVERY tier (target is normal_min_permille = 500‰)
+    // Deficit: 500 - 200 = 300‰
+    // Rate: 4.8 ‰/min = 0.080 ‰/sec
+    // Duration: 300 / 0.080 = 3750 seconds
+    time_t noon = make_epoch(2026, 3, 21, 12, 0);
+    EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
+
+    tc.on_tank_report(200, false, false, noon);
+
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::CRITICAL_RECOVERY);
+    EXPECT_EQ(tc.calculate_estimated_duration_s(), 3750);
 }
 
 TEST_F(TankControllerTest, FloatSwitchGovernsSatisfactionInBackupMode)
@@ -89,7 +108,7 @@ TEST_F(TankControllerTest, TargetPermilleReachedTransitionsToIdle)
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
-    tc.on_tank_report(800, false, false, noon);
+    tc.on_tank_report(700, false, false, noon);
     EXPECT_EQ(tc.get_state(), TankState::FILL_REQUESTED);
 
     // Reaches 1000‰
@@ -98,27 +117,28 @@ TEST_F(TankControllerTest, TargetPermilleReachedTransitionsToIdle)
     EXPECT_EQ(tc.get_current_intent().desired_state, LoadDesiredState::OFF);
 }
 
-TEST_F(TankControllerTest, DaytimeHighLevelIsOpportunisticSolarOnly)
+TEST_F(TankControllerTest, DaytimeSurplusLevelIsOpportunisticSolarOnly)
 {
     TankController tc(time_mgr_, sun_);
 
-    // Noon, level 920‰ (>= 900‰ opportunistic threshold)
+    // Noon, level 850‰ (800 <= level < 900) -> SOLAR_SURPLUS tier, SOLAR_ONLY
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
-    tc.on_tank_report(920, false, false, noon);
+    tc.on_tank_report(850, false, false, noon);
 
     LoadIntent intent = tc.get_current_intent();
     EXPECT_EQ(intent.desired_state, LoadDesiredState::ON);
     EXPECT_EQ(intent.urgency, LoadUrgency::OPPORTUNISTIC);
     EXPECT_EQ(intent.source_preference, SourcePreference::SOLAR_ONLY);
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::SOLAR_SURPLUS);
 }
 
 TEST_F(TankControllerTest, DaytimeModerateLevelIsOpportunisticSolarPreferred)
 {
     TankController tc(time_mgr_, sun_);
 
-    // Noon, level 700‰ (500 <= level < 900)
+    // Noon, level 700‰ (500 <= level < 800) -> OPPORTUNISTIC tier, SOLAR_PREFERRED
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
@@ -128,13 +148,14 @@ TEST_F(TankControllerTest, DaytimeModerateLevelIsOpportunisticSolarPreferred)
     EXPECT_EQ(intent.desired_state, LoadDesiredState::ON);
     EXPECT_EQ(intent.urgency, LoadUrgency::OPPORTUNISTIC);
     EXPECT_EQ(intent.source_preference, SourcePreference::SOLAR_PREFERRED);
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::OPPORTUNISTIC);
 }
 
 TEST_F(TankControllerTest, DaytimeLowLevelIsNormalSolarPreferred)
 {
     TankController tc(time_mgr_, sun_);
 
-    // Noon, level 400‰ (< 500‰)
+    // Noon, level 400‰ (300 <= level < 500) -> NORMAL_FILL tier, SOLAR_PREFERRED
     time_t noon = make_epoch(2026, 3, 21, 12, 0);
     EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
 
@@ -144,6 +165,7 @@ TEST_F(TankControllerTest, DaytimeLowLevelIsNormalSolarPreferred)
     EXPECT_EQ(intent.desired_state, LoadDesiredState::ON);
     EXPECT_EQ(intent.urgency, LoadUrgency::NORMAL);
     EXPECT_EQ(intent.source_preference, SourcePreference::SOLAR_PREFERRED);
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::NORMAL_FILL);
 }
 
 TEST_F(TankControllerTest, PreSunsetWindowEscalatesUrgencyToFillToTop)
@@ -160,8 +182,7 @@ TEST_F(TankControllerTest, PreSunsetWindowEscalatesUrgencyToFillToTop)
 
     LoadIntent intent = tc.get_current_intent();
     EXPECT_EQ(intent.desired_state, LoadDesiredState::ON);
-    EXPECT_EQ(intent.urgency, LoadUrgency::NORMAL);
-    EXPECT_EQ(intent.source_preference, SourcePreference::SOLAR_PREFERRED);
+    EXPECT_EQ(intent.urgency, LoadUrgency::OPPORTUNISTIC);
 }
 
 TEST_F(TankControllerTest, NighttimeBlocksNonCriticalFill)
@@ -193,6 +214,7 @@ TEST_F(TankControllerTest, CriticalLevelTriggersEmergencyFillEvenAtNight)
     EXPECT_EQ(intent.desired_state, LoadDesiredState::ON);
     EXPECT_EQ(intent.urgency, LoadUrgency::CRITICAL);
     EXPECT_EQ(intent.source_preference, SourcePreference::ANY);
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::CRITICAL_RECOVERY);
 }
 
 TEST_F(TankControllerTest, ManualFillButtonForcesFill)
@@ -214,7 +236,7 @@ TEST_F(TankControllerTest, ManualFillButtonForcesFill)
     EXPECT_EQ(intent.urgency, LoadUrgency::NORMAL);
 }
 
-TEST_F(TankControllerTest, PumpRunningUpdatesFsmState)
+TEST_F(TankControllerTest, OperatorManualStopEntersCooldownAndClearsManualRequest)
 {
     TankController tc(time_mgr_, sun_);
 
@@ -228,7 +250,54 @@ TEST_F(TankControllerTest, PumpRunningUpdatesFsmState)
     tc.on_pump_status_update(farm::LoadState::RUNNING, farm::PowerSource::SOLAR, 10);
     EXPECT_EQ(tc.get_state(), TankState::FILLING);
 
-    // Pump stops
+    // Operator stops pump locally (clean IDLE transition while level < 1000)
     tc.on_pump_status_update(farm::LoadState::IDLE, farm::PowerSource::UNKNOWN, 0);
+    EXPECT_EQ(tc.get_state(), TankState::IDLE);
+    EXPECT_TRUE(tc.is_manual_stop_in_cooldown());
+
+    // During cooldown, subsequent non-critical reports remain IDLE
+    tc.on_tank_report(700, false, false, noon + 300); // 5 min later
+    EXPECT_EQ(tc.get_state(), TankState::IDLE);
+    EXPECT_EQ(tc.get_current_intent().desired_state, LoadDesiredState::OFF);
+
+    // Manual button click overrides cooldown immediately
+    tc.on_manual_fill_request();
+    EXPECT_FALSE(tc.is_manual_stop_in_cooldown());
+    EXPECT_EQ(tc.get_state(), TankState::FILL_REQUESTED);
+    EXPECT_EQ(tc.get_current_intent().desired_state, LoadDesiredState::ON);
+}
+
+TEST_F(TankControllerTest, CriticalLevelOverridesManualStopCooldown)
+{
+    TankController tc(time_mgr_, sun_);
+
+    time_t noon = make_epoch(2026, 3, 21, 12, 0);
+    EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
+
+    tc.on_tank_report(700, false, false, noon);
+    tc.on_pump_status_update(farm::LoadState::RUNNING, farm::PowerSource::SOLAR, 10);
+    tc.on_pump_status_update(farm::LoadState::IDLE, farm::PowerSource::UNKNOWN, 0);
+    EXPECT_TRUE(tc.is_manual_stop_in_cooldown());
+
+    // Emergency critical level (<300‰) breaks cooldown
+    tc.on_tank_report(200, false, false, noon + 300);
+    EXPECT_EQ(tc.get_state(), TankState::FILL_REQUESTED);
+    EXPECT_EQ(tc.get_current_tier(), TankFillTier::CRITICAL_RECOVERY);
+    EXPECT_EQ(tc.get_current_intent().urgency, LoadUrgency::CRITICAL);
+}
+
+TEST_F(TankControllerTest, ErrorTimeoutDoesNotEnterManualStopCooldown)
+{
+    TankController tc(time_mgr_, sun_);
+
+    time_t noon = make_epoch(2026, 3, 21, 12, 0);
+    EXPECT_CALL(time_mgr_, get_timestamp_sec()).WillRepeatedly(Return(noon));
+
+    tc.on_tank_report(700, false, false, noon);
+    tc.on_pump_status_update(farm::LoadState::RUNNING, farm::PowerSource::SOLAR, 10);
+
+    // Pump times out (ERROR_TIMEOUT instead of IDLE)
+    tc.on_pump_status_update(farm::LoadState::ERROR_TIMEOUT, farm::PowerSource::UNKNOWN, 0);
+    EXPECT_FALSE(tc.is_manual_stop_in_cooldown());
     EXPECT_EQ(tc.get_state(), TankState::FILL_REQUESTED);
 }

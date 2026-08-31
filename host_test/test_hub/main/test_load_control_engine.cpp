@@ -164,3 +164,95 @@ TEST_F(LoadControlEngineTest, ScenarioC_CapturesCompressorOffCycleForEpisodicLoa
     EXPECT_TRUE(engine_.get_load(LoadIndex::PUMP).assigned_on);
     EXPECT_EQ(engine_.get_load(LoadIndex::PUMP).assigned_source, farm::PowerSource::SOLAR);
 }
+
+TEST_F(LoadControlEngineTest, LockedSourceGridIdleDoesNotTriggerActionWhenIntentOff)
+{
+    // Pump reports IDLE state with source locked to GRID (physical switch set to GRID, but not running)
+    engine_.on_load_status({
+        .load_index = LoadIndex::PUMP,
+        .node_id = farm::NodeId::PUMP_CONTROL,
+        .circuit_id = 0,
+        .control_mode = farm::ControlMode::AUTO,
+        .selected_source = farm::PowerSource::GRID,
+        .active_source = farm::PowerSource::UNKNOWN,
+        .load_state = farm::LoadState::IDLE,
+        .power_w = 0,
+        .timestamp_ms = 1000
+    });
+
+    // Intent is OFF (no fill requested)
+    engine_.on_load_intent({
+        .load_index = LoadIndex::PUMP,
+        .desired_state = LoadDesiredState::OFF
+    });
+
+    auto decisions = engine_.evaluate_arbitration();
+    for (const auto& dec : decisions) {
+        if (dec.load_index == LoadIndex::PUMP) {
+            EXPECT_FALSE(dec.should_be_on);
+            EXPECT_FALSE(dec.action_required); // MUST NOT send LOAD_OFF
+        }
+    }
+}
+
+TEST_F(LoadControlEngineTest, FullManualModeNeverGeneratesAction)
+{
+    // Node in FULL_MANUAL running on GRID
+    engine_.on_load_status({
+        .load_index = LoadIndex::PUMP,
+        .node_id = farm::NodeId::PUMP_CONTROL,
+        .circuit_id = 0,
+        .control_mode = farm::ControlMode::FULL_MANUAL,
+        .selected_source = farm::PowerSource::GRID,
+        .active_source = farm::PowerSource::GRID,
+        .load_state = farm::LoadState::RUNNING,
+        .power_w = 600,
+        .timestamp_ms = 1000
+    });
+
+    // Intent is OFF
+    engine_.on_load_intent({
+        .load_index = LoadIndex::PUMP,
+        .desired_state = LoadDesiredState::OFF
+    });
+
+    auto decisions = engine_.evaluate_arbitration();
+    for (const auto& dec : decisions) {
+        // Pump decision should not even be dispatched / action_required must be false
+        if (dec.load_index == LoadIndex::PUMP) {
+            EXPECT_FALSE(dec.action_required);
+        }
+    }
+}
+
+TEST_F(LoadControlEngineTest, ManualRunModeRunningDoesNotTriggerLoadOffWhenIntentIsOff)
+{
+    // Operator pressed manual START on pump controller (MANUAL_RUN mode, running on GRID)
+    engine_.on_load_status({
+        .load_index = LoadIndex::PUMP,
+        .node_id = farm::NodeId::PUMP_CONTROL,
+        .circuit_id = 0,
+        .control_mode = farm::ControlMode::MANUAL_RUN,
+        .selected_source = farm::PowerSource::GRID,
+        .active_source = farm::PowerSource::GRID,
+        .load_state = farm::LoadState::RUNNING,
+        .power_w = 320,
+        .timestamp_ms = 1000
+    });
+
+    // Hub TankController has not requested fill yet (desired_state = OFF)
+    engine_.on_load_intent({
+        .load_index = LoadIndex::PUMP,
+        .desired_state = LoadDesiredState::OFF
+    });
+
+    auto decisions = engine_.evaluate_arbitration();
+    for (const auto& dec : decisions) {
+        if (dec.load_index == LoadIndex::PUMP) {
+            // Must NOT trigger action (must not send LOAD_OFF to cancel operator start)
+            EXPECT_FALSE(dec.action_required);
+        }
+    }
+}
+
+

@@ -1,7 +1,7 @@
 // main/include/interfaces/i_load_domain_controller.hpp
 #pragma once
 
-#include "load_types.hpp"
+#include "load_control_types.hpp"
 
 /**
  * @interface ILoadDomainController

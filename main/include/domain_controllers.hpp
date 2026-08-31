@@ -1,6 +1,7 @@
 // main/include/domain_controllers.hpp
 #pragma once
 
+#include "load_profiles.hpp"
 #include "static_load_controller.hpp"
 
 /**
@@ -10,18 +11,7 @@
 class FridgeController : public StaticLoadController
 {
 public:
-    explicit FridgeController(
-        const LoadProfile& profile =
-            {
-                .expected_watts_running = 350,
-                .expected_watts_idle = 30,
-                .can_shed = true,
-                .max_shed_duration_s = 20 * 60, // 20 minutes safe off time
-                .min_switch_interval_s = 180,   // 3 minutes compressor pressure relief
-                .max_wait_window_s = 0,
-                .is_continuous = true,
-                .priority_rank = 3,
-            })
+    explicit FridgeController(const LoadProfile& profile = farm_loads::FRIDGE)
         : StaticLoadController(LoadIndex::FRIDGE, profile, LoadUrgency::NORMAL, SourcePreference::SOLAR_PREFERRED)
     {
     }
@@ -34,18 +24,7 @@ public:
 class FreezerController : public StaticLoadController
 {
 public:
-    explicit FreezerController(
-        const LoadProfile& profile =
-            {
-                .expected_watts_running = 700,
-                .expected_watts_idle = 40,
-                .can_shed = true,
-                .max_shed_duration_s = 30 * 60, // 30 minutes safe off time
-                .min_switch_interval_s = 180,   // 3 minutes compressor pressure relief
-                .max_wait_window_s = 0,
-                .is_continuous = true,
-                .priority_rank = 2,
-            })
+    explicit FreezerController(const LoadProfile& profile = farm_loads::FREEZER)
         : StaticLoadController(LoadIndex::FREEZER, profile, LoadUrgency::NORMAL, SourcePreference::SOLAR_PREFERRED)
     {
     }
@@ -58,18 +37,7 @@ public:
 class RouterController : public StaticLoadController
 {
 public:
-    explicit RouterController(
-        const LoadProfile& profile =
-            {
-                .expected_watts_running = 75,
-                .expected_watts_idle = 30,
-                .can_shed = false,
-                .max_shed_duration_s = 0, // Cannot be shed
-                .min_switch_interval_s = 600, // 10 minutes debounce to protect satellite link
-                .max_wait_window_s = 0,
-                .is_continuous = true,
-                .priority_rank = 1,
-            })
+    explicit RouterController(const LoadProfile& profile = farm_loads::ROUTER)
         : StaticLoadController(LoadIndex::ROUTER, profile, LoadUrgency::CRITICAL, SourcePreference::SOLAR_PREFERRED)
     {
     }
@@ -82,18 +50,7 @@ public:
 class LightingController : public StaticLoadController
 {
 public:
-    explicit LightingController(
-        const LoadProfile& profile =
-            {
-                .expected_watts_running = 100,
-                .expected_watts_idle = 0,
-                .can_shed = true,
-                .max_shed_duration_s = 0,
-                .min_switch_interval_s = 5,
-                .max_wait_window_s = 0,
-                .is_continuous = false,
-                .priority_rank = 5,
-            })
+    explicit LightingController(const LoadProfile& profile = farm_loads::LIGHTING)
         : StaticLoadController(LoadIndex::LIGHTING, profile, LoadUrgency::SHEDDABLE, SourcePreference::SOLAR_ONLY)
     {
     }
