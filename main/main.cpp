@@ -42,6 +42,7 @@
 #include "ui_input_manager.hpp"
 #include "ui_snapshot.hpp"
 #include "wifi_manager.hpp"
+#include "secrets.hpp"
 
 static const char* TAG = "main";
 
@@ -139,7 +140,7 @@ extern "C" void app_main()
     static DisplayManager display_mgr(
         ui_snapshot, node_registry, ui_event_queue, app_cmd_queue, &espnow, hal_freertos, hal_i2c, display_cfg);
 
-    static SunSchedule sun_schedule(-23.5505f, -3.0f); // Default SP coordinates (lat, tz_offset)
+    static SunSchedule sun_schedule(LOCATION_LATITUDE_DEG, LOCATION_TZ_OFFSET_HOURS);
     static TankController tank_controller(app_time_manager, sun_schedule);
     static EnergyMonitor energy_monitor(hal_gpio, hal_freertos);
 
